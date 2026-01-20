@@ -25,8 +25,6 @@ const unsigned int SCR_HEIGHT = 1080;
 
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
-const float PLAYER_RADIUS = 0.12f;   // prueba 0.12–0.15 con TILE=0.50
-const float PLAYER_SKIN = 0.02f;   // margen extra para que NO se pegue a paredes
 const float CELL_EPS = 1e-4f;   // epsilon contra errores de float
 
 
@@ -221,10 +219,11 @@ static glm::vec3 CellToWorld(int r, int c) {
     float halfW = (MAP_W * TILE) * 0.5f;
     float halfH = (MAP_H * TILE) * 0.5f;
 
-    float x = (c * TILE) - halfW;
-    float z = (halfH)-(r * TILE);
+    float x = (c * TILE) - halfW + TILE * 0.5f;   // +0.5 tile => centro
+    float z = (halfH)-(r * TILE) - TILE * 0.5f; // -0.5 tile => centro
     return glm::vec3(x, 0.0f, z);
 }
+
 
 
 static inline bool WalkableCell(int r, int c) {
@@ -232,40 +231,61 @@ static inline bool WalkableCell(int r, int c) {
 }
 
 // Convierte mundo (x,z) a celda (r,c) usando TU MISMO CellToWorld (sin invertir)
-static inline bool WorldToCell(float x, float z, int& outR, int& outC) {
+
+
+// Revisa colisión con 4 puntos del radio (circle approx)
+// ==== COLISIONES (PLAYER CIRCLE vs WALL TILES) ====
+const float PLAYER_RADIUS = 0.22f;  // sube/baja (con TILE=0.50, 0.12–0.18)
+const float PLAYER_SKIN = 0.03f;  // margen para NO pegarse (evita que la cámara "asome")
+
+static inline void TileAABB(int r, int c, float& xMin, float& xMax, float& zMin, float& zMax) {
     float halfW = (MAP_W * TILE) * 0.5f;
     float halfH = (MAP_H * TILE) * 0.5f;
 
-    // Inversa de:
-    // x = c*TILE - halfW
-    // z = halfH - r*TILE
-    float cf = (x + halfW) / TILE;
-    float rf = (halfH - z) / TILE;
-    outC = (int)floor(cf + CELL_EPS);
-    outR = (int)floor(rf + CELL_EPS);
+    // x = c*TILE - halfW  (crece hacia +x)
+    xMin = (c * TILE) - halfW;
+    xMax = xMin + TILE;
 
-    return InBounds(outR, outC);
+    // z = halfH - r*TILE  (crece hacia +z cuando r baja)
+    zMax = halfH - (r * TILE);
+    zMin = zMax - TILE;
 }
 
-// Revisa colisión con 4 puntos del radio (circle approx)
-static inline bool Collides(float x, float z) {
-    const float r = PLAYER_RADIUS + PLAYER_SKIN;
+static inline bool CircleAABB(float cx, float cz, float radius, float xMin, float xMax, float zMin, float zMax) {
+    // clamp
+    float x = (cx < xMin) ? xMin : (cx > xMax ? xMax : cx);
+    float z = (cz < zMin) ? zMin : (cz > zMax ? zMax : cz);
 
-    int rr, cc;
+    float dx = cx - x;
+    float dz = cz - z;
+    return (dx * dx + dz * dz) <= (radius * radius);
+}
 
-    // 8 puntos (esquinas + cardinales)
-    if (!WorldToCell(x - r, z - r, rr, cc) || !WalkableCell(rr, cc)) return true;
-    if (!WorldToCell(x + r, z - r, rr, cc) || !WalkableCell(rr, cc)) return true;
-    if (!WorldToCell(x - r, z + r, rr, cc) || !WalkableCell(rr, cc)) return true;
-    if (!WorldToCell(x + r, z + r, rr, cc) || !WalkableCell(rr, cc)) return true;
+static inline bool CollidesAt(float x, float z) {
+    // revisa SOLO tiles cercanas (3x3) alrededor del jugador
+    float halfW = (MAP_W * TILE) * 0.5f;
+    float halfH = (MAP_H * TILE) * 0.5f;
 
-    if (!WorldToCell(x - r, z, rr, cc) || !WalkableCell(rr, cc)) return true;
-    if (!WorldToCell(x + r, z, rr, cc) || !WalkableCell(rr, cc)) return true;
-    if (!WorldToCell(x, z - r, rr, cc) || !WalkableCell(rr, cc)) return true;
-    if (!WorldToCell(x, z + r, rr, cc) || !WalkableCell(rr, cc)) return true;
+    int c0 = (int)floor((x + halfW) / TILE);
+    int r0 = (int)floor((halfH - z) / TILE);
 
+    float rad = PLAYER_RADIUS + PLAYER_SKIN;
+
+    for (int rr = r0 - 1; rr <= r0 + 1; rr++) {
+        for (int cc = c0 - 1; cc <= c0 + 1; cc++) {
+            // fuera del mapa = pared sólida
+            if (!InBounds(rr, cc) || IsWall(rr, cc)) {
+                float xMin, xMax, zMin, zMax;
+                // si está fuera, igual calculamos AABB "virtual" en esa celda
+                TileAABB(rr, cc, xMin, xMax, zMin, zMax);
+                if (CircleAABB(x, z, rad, xMin, xMax, zMin, zMax))
+                    return true;
+            }
+        }
+    }
     return false;
 }
+
 
 
 
@@ -273,16 +293,25 @@ static inline bool Collides(float x, float z) {
 static inline void MoveWithCollision(const glm::vec3& deltaXZ) {
     glm::vec3 pos = camera.Position;
 
-    // 1) intenta X
-    glm::vec3 tryX = pos + glm::vec3(deltaXZ.x, 0.0f, 0.0f);
-    if (!Collides(tryX.x, tryX.z)) pos = tryX;
+    // pasos cortos para evitar tunneling
+    float len = glm::length(glm::vec2(deltaXZ.x, deltaXZ.z));
+    float maxStep = 0.02f; // mientras menor, más seguro
+    int steps = (len > 0.0f) ? (int)ceil(len / maxStep) : 1;
 
-    // 2) intenta Z
-    glm::vec3 tryZ = pos + glm::vec3(0.0f, 0.0f, deltaXZ.z);
-    if (!Collides(tryZ.x, tryZ.z)) pos = tryZ;
+    glm::vec3 step = deltaXZ / (float)steps;
+
+    for (int i = 0; i < steps; i++) {
+        // slide: X luego Z
+        glm::vec3 tryX = pos + glm::vec3(step.x, 0.0f, 0.0f);
+        if (!CollidesAt(tryX.x, tryX.z)) pos = tryX;
+
+        glm::vec3 tryZ = pos + glm::vec3(0.0f, 0.0f, step.z);
+        if (!CollidesAt(tryZ.x, tryZ.z)) pos = tryZ;
+    }
 
     camera.Position = pos;
 }
+
 
 
 // Busca automáticamente un spawn: primera '1' encontrada (o si quieres, busca una marca 'S')
@@ -449,7 +478,7 @@ int main() {
         glClearColor(0.08f, 0.08f, 0.08f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / SCR_HEIGHT, 0.1f, 250.0f);
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / SCR_HEIGHT, 0.2f, 250.0f);
         glm::mat4 view = camera.GetViewMatrix();
 
         shader.use();

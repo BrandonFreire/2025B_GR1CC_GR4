@@ -1,4 +1,5 @@
-// ===================== LABERINTO DESDE TXT - SIN TEXTURAS =====================
+﻿// ===================== LABERINTO DESDE TXT - SIN TEXTURAS =====================
+// Lee un archivo maze.txt (0 = vacío, 1 = suelo, E = salida)
 // Requiere B2T3.fs con uniform vec3 baseColor (sin samplear texture1).
 
 #include <glad/glad.h>
@@ -16,17 +17,24 @@
 #include <string>
 
 // ================= CONFIG =================
-const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 600;
+// prototipos colisión (para que processInput los vea)
+static inline void MoveWithCollision(const glm::vec3& deltaXZ);
+
+const unsigned int SCR_WIDTH = 1920;
+const unsigned int SCR_HEIGHT = 1080;
 
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
+const float PLAYER_RADIUS = 0.12f;   // prueba 0.12–0.15 con TILE=0.50
+const float PLAYER_SKIN = 0.02f;   // margen extra para que NO se pegue a paredes
+const float CELL_EPS = 1e-4f;   // epsilon contra errores de float
 
-// ================= ESCALA / RENDER =================
-static const float TARGET_WORLD_WIDTH = 30.0f; // queremos que el mapa ~30u de ancho
-float TILE = 2.5f;                             // se recalcula al cargar
-const float WALL_HEIGHT = 1.6f;                 // paredes m�s bajas
-const float LIGHT_CUBE_SCALE = 0.25f;
+
+// ================= ESCALA =================
+// Se calcula MAP_W/MAP_H desde el TXT. TILE mantiene tamaño similar a tu ROOM_SIZE (~30).
+const float TILE = 0.75f;             // 155 * 0.20 ≈ 31 (si tu mapa es 155 de ancho)
+const float WALL_HEIGHT = 4.0f;       // paredes más bajas
+const float LIGHT_CUBE_SCALE = 0.50f;
 
 // ================= LUZ =================
 glm::vec3 lightPos(0.0f, 6.0f, 0.0f);
@@ -114,60 +122,68 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) camera.Keyboard(0, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) camera.Keyboard(1, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) camera.Keyboard(2, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) camera.Keyboard(3, deltaTime);
+    glm::vec3 move(0.0f);
 
-    // Linterna L (toggle)
+    // mover en plano XZ (sin volar)
+    glm::vec3 f = glm::normalize(glm::vec3(camera.Front.x, 0.0f, camera.Front.z));
+    glm::vec3 r = glm::normalize(glm::vec3(camera.Right.x, 0.0f, camera.Right.z));
+
+    float v = camera.Speed * deltaTime;
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) move += f * v;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) move -= f * v;
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) move -= r * v;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) move += r * v;
+
+    if (move.x != 0.0f || move.z != 0.0f)
+        MoveWithCollision(move);
+
+
+    // Linterna L
     static bool lPrevState = false;
     bool lState = glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS;
     if (lState && !lPrevState) linternaEncendida = !linternaEncendida;
     lPrevState = lState;
 }
 
-// ================= MAPA DESDE TXT =================
-// 0 = vac�o, 1 = piso/camino, E = salida, S = spawn
+// ================= MAPA DESDE ARCHIVO TXT =================
 static std::vector<std::string> MAP;
 static int MAP_W = 0;
 static int MAP_H = 0;
 
 static bool LoadMapFromTxt(const std::string& path) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        std::cerr << "No se pudo abrir: " << path << "\n";
+    std::ifstream in(path);
+    if (!in.is_open()) {
+        std::cerr << "No se pudo abrir el archivo: " << path << "\n";
         return false;
     }
 
     MAP.clear();
     std::string line;
-    while (std::getline(file, line)) {
-        // limpiar CR si viene de Windows (line endings)
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+    while (std::getline(in, line)) {
+        if (!line.empty() && (line.back() == '\r')) line.pop_back(); // por si el txt tiene CRLF
         if (line.empty()) continue;
         MAP.push_back(line);
     }
+    in.close();
 
     if (MAP.empty()) {
-        std::cerr << "Mapa vacio.\n";
+        std::cerr << "El archivo está vacio.\n";
         return false;
     }
 
     MAP_H = (int)MAP.size();
     MAP_W = (int)MAP[0].size();
 
-    // Validar ancho uniforme
+    // Validación: todas las filas mismo ancho
     for (int r = 0; r < MAP_H; r++) {
         if ((int)MAP[r].size() != MAP_W) {
-            std::cerr << "Fila " << r << " tiene ancho diferente.\n";
+            std::cerr << "Error: fila " << r << " tiene ancho " << MAP[r].size()
+                << " pero se esperaba " << MAP_W << "\n";
             return false;
         }
     }
 
-    // TILE auto: el mapa siempre ~TARGET_WORLD_WIDTH de ancho
-    TILE = TARGET_WORLD_WIDTH / (float)MAP_W;
-
-    std::cout << "Mapa cargado OK: " << MAP_W << "x" << MAP_H << " | TILE=" << TILE << "\n";
+    std::cout << "Mapa cargado OK: " << MAP_W << "x" << MAP_H << "\n";
     return true;
 }
 
@@ -180,29 +196,26 @@ static inline char Cell(int r, int c) {
     return MAP[r][c];
 }
 
-static inline bool Walkable(int r, int c) {
+static inline bool IsFloor(int r, int c) {
     char t = Cell(r, c);
-    return t == '1' || t == 'E' || t == 'S';
+    return t == '1' || t == 'S' || t == 's';
 }
 
-static inline bool IsExit(int r, int c) { return Cell(r, c) == 'E'; }
-static inline bool IsSpawn(int r, int c) { return Cell(r, c) == 'S'; }
 
-static bool FindSpawn(int& outR, int& outC) {
-    // buscar 'S'
-    for (int r = 0; r < MAP_H; r++) {
-        for (int c = 0; c < MAP_W; c++) {
-            if (IsSpawn(r, c)) { outR = r; outC = c; return true; }
-        }
-    }
-    // fallback: primera '1'
-    for (int r = 0; r < MAP_H; r++) {
-        for (int c = 0; c < MAP_W; c++) {
-            if (Cell(r, c) == '1') { outR = r; outC = c; return true; }
-        }
-    }
-    return false;
+
+static inline bool IsWall(int r, int c) {
+    char t = Cell(r, c);
+    return t == '0' || t == '2' || t == '3'; // paredes por tipo
 }
+
+static inline int WallType(int r, int c) {
+    char t = Cell(r, c);
+    if (t == '0') return 0;
+    if (t == '2') return 2;
+    if (t == '3') return 3;
+    return -1;
+}
+
 
 static glm::vec3 CellToWorld(int r, int c) {
     float halfW = (MAP_W * TILE) * 0.5f;
@@ -213,14 +226,103 @@ static glm::vec3 CellToWorld(int r, int c) {
     return glm::vec3(x, 0.0f, z);
 }
 
+
+static inline bool WalkableCell(int r, int c) {
+    return InBounds(r, c) && IsFloor(r, c); // SOLO suelo es caminable
+}
+
+// Convierte mundo (x,z) a celda (r,c) usando TU MISMO CellToWorld (sin invertir)
+static inline bool WorldToCell(float x, float z, int& outR, int& outC) {
+    float halfW = (MAP_W * TILE) * 0.5f;
+    float halfH = (MAP_H * TILE) * 0.5f;
+
+    // Inversa de:
+    // x = c*TILE - halfW
+    // z = halfH - r*TILE
+    float cf = (x + halfW) / TILE;
+    float rf = (halfH - z) / TILE;
+    outC = (int)floor(cf + CELL_EPS);
+    outR = (int)floor(rf + CELL_EPS);
+
+    return InBounds(outR, outC);
+}
+
+// Revisa colisión con 4 puntos del radio (circle approx)
+static inline bool Collides(float x, float z) {
+    const float r = PLAYER_RADIUS + PLAYER_SKIN;
+
+    int rr, cc;
+
+    // 8 puntos (esquinas + cardinales)
+    if (!WorldToCell(x - r, z - r, rr, cc) || !WalkableCell(rr, cc)) return true;
+    if (!WorldToCell(x + r, z - r, rr, cc) || !WalkableCell(rr, cc)) return true;
+    if (!WorldToCell(x - r, z + r, rr, cc) || !WalkableCell(rr, cc)) return true;
+    if (!WorldToCell(x + r, z + r, rr, cc) || !WalkableCell(rr, cc)) return true;
+
+    if (!WorldToCell(x - r, z, rr, cc) || !WalkableCell(rr, cc)) return true;
+    if (!WorldToCell(x + r, z, rr, cc) || !WalkableCell(rr, cc)) return true;
+    if (!WorldToCell(x, z - r, rr, cc) || !WalkableCell(rr, cc)) return true;
+    if (!WorldToCell(x, z + r, rr, cc) || !WalkableCell(rr, cc)) return true;
+
+    return false;
+}
+
+
+
+// Movimiento con colisión y "slide": intenta X y Z por separado
+static inline void MoveWithCollision(const glm::vec3& deltaXZ) {
+    glm::vec3 pos = camera.Position;
+
+    // 1) intenta X
+    glm::vec3 tryX = pos + glm::vec3(deltaXZ.x, 0.0f, 0.0f);
+    if (!Collides(tryX.x, tryX.z)) pos = tryX;
+
+    // 2) intenta Z
+    glm::vec3 tryZ = pos + glm::vec3(0.0f, 0.0f, deltaXZ.z);
+    if (!Collides(tryZ.x, tryZ.z)) pos = tryZ;
+
+    camera.Position = pos;
+}
+
+
+// Busca automáticamente un spawn: primera '1' encontrada (o si quieres, busca una marca 'S')
+static bool FindSpawn(int& outR, int& outC) {
+    // 1) si existe S o s, usarla
+    for (int r = 0; r < MAP_H; r++) {
+        for (int c = 0; c < MAP_W; c++) {
+            if (MAP[r][c] == 'S' || MAP[r][c] == 's') {
+                outR = r; outC = c;
+                return true;
+            }
+        }
+    }
+
+    // 2) fallback: primera celda de suelo
+    for (int r = 0; r < MAP_H; r++) {
+        for (int c = 0; c < MAP_W; c++) {
+            if (IsFloor(r, c)) { outR = r; outC = c; return true; }
+        }
+    }
+    return false;
+}
+
+
+
 // ================= MAIN =================
 int main() {
+    // 1) Cargar mapa ANTES de crear OpenGL (así si falla, no pierdes tiempo)
+    // Ruta recomendada: el archivo junto al .exe (o junto al proyecto ejecutando desde VS)
+    if (!LoadMapFromTxt("maze.txt")) {
+        std::cerr << "ERROR: No se pudo cargar maze.txt\n";
+        return -1;
+    }
+
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LABERINTO (sin texturas) - TXT", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LABERINTO (TXT) - Sin Texturas", nullptr, nullptr);
     glfwMakeContextCurrent(window);
 
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
@@ -235,31 +337,6 @@ int main() {
 
     Shader shader("shaders/B2T3.vs", "shaders/B2T3.fs");
     Shader lightShader("shaders/light_cube.vs", "shaders/light_cube.fs");
-
-    // ===== CARGAR MAPA DESDE TXT =====
-    // Coloca maze.txt en la misma carpeta donde corre el .exe (working directory).
-    if (!LoadMapFromTxt("maze.txt")) {
-        std::cerr << "No se pudo cargar maze.txt\n";
-        return -1;
-    }
-
-    int sr = 0, sc = 0;
-    if (!FindSpawn(sr, sc)) {
-        std::cerr << "No hay 'S' ni '1' en el mapa.\n";
-        return -1;
-    }
-
-    // Luz al centro del mapa
-    {
-        glm::vec3 center = CellToWorld(MAP_H / 2, MAP_W / 2);
-        lightPos = glm::vec3(center.x, 6.0f, center.z);
-    }
-
-    // C�mara en spawn (un poco hacia atr�s en Z para que vea algo)
-    {
-        glm::vec3 spawnW = CellToWorld(sr, sc);
-        camera.SetPose(glm::vec3(spawnW.x, 2.0f, spawnW.z + 2.0f), -90.0f, 0.0f);
-    }
 
     // ===== GEOMETRIA BASE =====
     float planeVertices[] = {
@@ -282,6 +359,7 @@ int main() {
 
     // Cubo para la luz
     float cubeVertices[] = {
+        // (igual que el tuyo)
         -0.5f,-0.5f,-0.5f,   0,0,-1, 0,0,
          0.5f, 0.5f,-0.5f,   0,0,-1, 1,1,
          0.5f,-0.5f,-0.5f,   0,0,-1, 1,0,
@@ -327,7 +405,6 @@ int main() {
 
     unsigned int floorVAO, floorVBO, wallVAO, wallVBO, cubeVAO, cubeVBO;
 
-    // Piso
     glGenVertexArrays(1, &floorVAO);
     glGenBuffers(1, &floorVBO);
     glBindVertexArray(floorVAO);
@@ -337,7 +414,6 @@ int main() {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float))); glEnableVertexAttribArray(2);
 
-    // Pared
     glGenVertexArrays(1, &wallVAO);
     glGenBuffers(1, &wallVBO);
     glBindVertexArray(wallVAO);
@@ -347,7 +423,6 @@ int main() {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float))); glEnableVertexAttribArray(2);
 
-    // Cubo luz
     glGenVertexArrays(1, &cubeVAO);
     glGenBuffers(1, &cubeVBO);
     glBindVertexArray(cubeVAO);
@@ -356,6 +431,12 @@ int main() {
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0); glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float))); glEnableVertexAttribArray(2);
+
+    // ===== Spawn cámara (auto) =====
+    int sr = 0, sc = 0;
+    if (!FindSpawn(sr, sc)) { sr = 0; sc = 0; }
+    glm::vec3 spawnW = CellToWorld(sr, sc);
+    camera.SetPose(glm::vec3(spawnW.x, 2.0f, spawnW.z), 180.0f, 0.0f);
 
     // ================= LOOP =================
     while (!glfwWindowShouldClose(window)) {
@@ -385,8 +466,9 @@ int main() {
             shader.setFloat("spotOuterCutOff", glm::cos(glm::radians(25.0f)));
         }
         else {
-            shader.setVec3("spotLightPos", glm::vec3(0));
-            shader.setVec3("spotLightDir", glm::vec3(0));
+            shader.setVec3("spotLightPos", glm::vec3(0.0f, 0.0f, 0.0f));
+            shader.setVec3("spotLightDir", glm::vec3(0.0f, 0.0f, 0.0f));
+
             shader.setFloat("spotCutOff", 0.0f);
             shader.setFloat("spotOuterCutOff", 0.0f);
         }
@@ -394,7 +476,8 @@ int main() {
         // ===== DIBUJAR SUELO + PAREDES =====
         for (int r = 0; r < MAP_H; r++) {
             for (int c = 0; c < MAP_W; c++) {
-                if (!Walkable(r, c)) continue;
+                if (!IsFloor(r, c)) continue;
+
 
                 glm::vec3 w = CellToWorld(r, c);
 
@@ -405,16 +488,34 @@ int main() {
                 model = glm::scale(model, glm::vec3(TILE, 1.0f, TILE));
                 shader.setMat4("model", model);
 
-                // colores s�lidos (solo referencia)
-                shader.setVec3("baseColor", IsExit(r, c) ? glm::vec3(0.55f, 0.20f, 0.65f) : glm::vec3(0.78f, 0.65f, 0.20f));
+                shader.setVec3("baseColor", glm::vec3(0.78f, 0.65f, 0.20f));
                 glDrawArrays(GL_TRIANGLES, 0, 6);
 
-                // ----- Paredes por borde -----
+                // ----- Techo -----
+                glBindVertexArray(floorVAO);
+                glm::mat4 roof = glm::mat4(1.0f);
+                roof = glm::translate(roof, glm::vec3(w.x, WALL_HEIGHT, w.z));
+                roof = glm::scale(roof, glm::vec3(TILE, 1.0f, TILE));
+                shader.setMat4("model", roof);
+
+                // color del techo (gris)
+                shader.setVec3("baseColor", 0.25f, 0.25f, 0.25f);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+
+
+                // ----- Paredes (bordes) -----
                 glBindVertexArray(wallVAO);
                 shader.setVec3("baseColor", glm::vec3(0.90f, 0.90f, 0.90f));
 
-                // Norte (r-1,c)
-                if (!Walkable(r - 1, c)) {
+                // Norte (vecino r-1)
+                if (!InBounds(r - 1, c) || IsWall(r - 1, c)) {
+                    int t = InBounds(r - 1, c) ? WallType(r - 1, c) : 0; // fuera = tipo 0
+
+                    glm::vec3 col = glm::vec3(0.10f); // tipo 0 (oscuro / “negro”)
+                    if (t == 2) col = glm::vec3(0.10f, 0.65f, 0.95f);    // azul
+                    if (t == 3) col = glm::vec3(0.95f, 0.20f, 0.20f);    // rojo
+                    shader.setVec3("baseColor", col);
+
                     model = glm::mat4(1.0f);
                     model = glm::translate(model, glm::vec3(w.x, 0.0f, w.z + TILE * 0.5f));
                     model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0, 1, 0));
@@ -422,9 +523,15 @@ int main() {
                     shader.setMat4("model", model);
                     glDrawArrays(GL_TRIANGLES, 0, 6);
                 }
+                // ===================== SUR =====================
+                if (!InBounds(r + 1, c) || IsWall(r + 1, c)) {
+                    int t = InBounds(r + 1, c) ? WallType(r + 1, c) : 0; // fuera = tipo 0
 
-                // Sur (r+1,c)
-                if (!Walkable(r + 1, c)) {
+                    glm::vec3 col = glm::vec3(0.10f);                 // 0 = negro/oscuro
+                    if (t == 2) col = glm::vec3(0.10f, 0.65f, 0.95f);  // 2 = azul
+                    if (t == 3) col = glm::vec3(0.95f, 0.20f, 0.20f);  // 3 = rojo
+                    shader.setVec3("baseColor", col);
+
                     model = glm::mat4(1.0f);
                     model = glm::translate(model, glm::vec3(w.x, 0.0f, w.z - TILE * 0.5f));
                     model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
@@ -432,8 +539,15 @@ int main() {
                     glDrawArrays(GL_TRIANGLES, 0, 6);
                 }
 
-                // Oeste (r,c-1)
-                if (!Walkable(r, c - 1)) {
+                // ===================== OESTE =====================
+                if (!InBounds(r, c - 1) || IsWall(r, c - 1)) {
+                    int t = InBounds(r, c - 1) ? WallType(r, c - 1) : 0; // fuera = tipo 0
+
+                    glm::vec3 col = glm::vec3(0.10f);
+                    if (t == 2) col = glm::vec3(0.10f, 0.65f, 0.95f);
+                    if (t == 3) col = glm::vec3(0.95f, 0.20f, 0.20f);
+                    shader.setVec3("baseColor", col);
+
                     model = glm::mat4(1.0f);
                     model = glm::translate(model, glm::vec3(w.x - TILE * 0.5f, 0.0f, w.z));
                     model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0, 1, 0));
@@ -442,8 +556,15 @@ int main() {
                     glDrawArrays(GL_TRIANGLES, 0, 6);
                 }
 
-                // Este (r,c+1)
-                if (!Walkable(r, c + 1)) {
+                // ===================== ESTE =====================
+                if (!InBounds(r, c + 1) || IsWall(r, c + 1)) {
+                    int t = InBounds(r, c + 1) ? WallType(r, c + 1) : 0; // fuera = tipo 0
+
+                    glm::vec3 col = glm::vec3(0.10f);
+                    if (t == 2) col = glm::vec3(0.10f, 0.65f, 0.95f);
+                    if (t == 3) col = glm::vec3(0.95f, 0.20f, 0.20f);
+                    shader.setVec3("baseColor", col);
+
                     model = glm::mat4(1.0f);
                     model = glm::translate(model, glm::vec3(w.x + TILE * 0.5f, 0.0f, w.z));
                     model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0, 1, 0));
@@ -451,6 +572,7 @@ int main() {
                     shader.setMat4("model", model);
                     glDrawArrays(GL_TRIANGLES, 0, 6);
                 }
+
             }
         }
 

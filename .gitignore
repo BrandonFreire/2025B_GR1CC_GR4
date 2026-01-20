@@ -361,3 +361,73 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+##
+## OpenGL/C++ Specific
+##
+
+# Build folders
+x64/
+x86/
+Debug/
+Release/
+[Dd]ebug/
+[Rr]elease/
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Visual Studio intermediate files
+*.tlog
+*.lastbuildstate
+*.idb
+*.pdb
+*.ilk
+*.log
+*.iobj
+*.ipdb
+
+# Visual Studio cache/options
+.vs/
+*.opensdf
+*.sdf
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Bb]in/
+[Oo]bj/
+ipch/
+
+# OpenGL/Graphics specific (uncomment if needed)
+# Large texture files - only if they're too big for repo
+# *.png
+# *.jpg
+# *.jpeg
+# *.bmp
+# *.tga

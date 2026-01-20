@@ -1,4 +1,7 @@
-#include <glad/glad.h> 
+// ===================== LABERINTO DESDE TXT - SIN TEXTURAS =====================
+// Requiere B2T3.fs con uniform vec3 baseColor (sin samplear texture1).
+
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #include <glm/glm.hpp>
@@ -7,10 +10,10 @@
 
 #include <learnopengl/shader.h>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <learnopengl/stb_image.h> 
-
 #include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
 
 // ================= CONFIG =================
 const unsigned int SCR_WIDTH = 800;
@@ -19,16 +22,15 @@ const unsigned int SCR_HEIGHT = 600;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-// ================= GEOMETRIA =================
-const float ROOM_SIZE = 30.0f;
-const float WALL_HEIGHT = 5.0f;
-const float HUECO_PASILLO = 4.0f;
-const float PASILLO_LENGTH = 20.0f; // longitud del pasillo
+// ================= ESCALA / RENDER =================
+static const float TARGET_WORLD_WIDTH = 30.0f; // queremos que el mapa ~30u de ancho
+float TILE = 2.5f;                             // se recalcula al cargar
+const float WALL_HEIGHT = 1.6f;                 // paredes más bajas
+const float LIGHT_CUBE_SCALE = 0.25f;
 
 // ================= LUZ =================
 glm::vec3 lightPos(0.0f, 6.0f, 0.0f);
 bool linternaEncendida = false;
-
 
 // ================= CAMARA =================
 class Camera {
@@ -67,6 +69,13 @@ public:
         update();
     }
 
+    void SetPose(const glm::vec3& pos, float yawDeg, float pitchDeg) {
+        Position = pos;
+        Yaw = yawDeg;
+        Pitch = glm::clamp(pitchDeg, -89.0f, 89.0f);
+        update();
+    }
+
 private:
     void update() {
         glm::vec3 f;
@@ -91,13 +100,13 @@ void framebuffer_size_callback(GLFWwindow*, int w, int h) {
 
 void mouse_callback(GLFWwindow*, double xpos, double ypos) {
     if (firstMouse) {
-        lastX = xpos;
-        lastY = ypos;
+        lastX = (float)xpos;
+        lastY = (float)ypos;
         firstMouse = false;
     }
-    camera.Mouse(xpos - lastX, lastY - ypos);
-    lastX = xpos;
-    lastY = ypos;
+    camera.Mouse((float)xpos - lastX, lastY - (float)ypos);
+    lastX = (float)xpos;
+    lastY = (float)ypos;
 }
 
 // ================= INPUT =================
@@ -109,33 +118,99 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) camera.Keyboard(1, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) camera.Keyboard(2, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) camera.Keyboard(3, deltaTime);
-    // Linterna L
+
+    // Linterna L (toggle)
     static bool lPrevState = false;
     bool lState = glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS;
     if (lState && !lPrevState) linternaEncendida = !linternaEncendida;
     lPrevState = lState;
 }
 
-// ================= TEXTURA =================
-unsigned int loadTexture(const char* path) {
-    unsigned int id;
-    glGenTextures(1, &id);
+// ================= MAPA DESDE TXT =================
+// 0 = vacío, 1 = piso/camino, E = salida, S = spawn
+static std::vector<std::string> MAP;
+static int MAP_W = 0;
+static int MAP_H = 0;
 
-    int w, h, c;
-    unsigned char* data = stbi_load(path, &w, &h, &c, 0);
-    if (data) {
-        GLenum format = (c == 4) ? GL_RGBA : GL_RGB;
-        glBindTexture(GL_TEXTURE_2D, id);
-        glTexImage2D(GL_TEXTURE_2D, 0, format, w, h, 0, format, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+static bool LoadMapFromTxt(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "No se pudo abrir: " << path << "\n";
+        return false;
     }
-    stbi_image_free(data);
-    return id;
+
+    MAP.clear();
+    std::string line;
+    while (std::getline(file, line)) {
+        // limpiar CR si viene de Windows (line endings)
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.empty()) continue;
+        MAP.push_back(line);
+    }
+
+    if (MAP.empty()) {
+        std::cerr << "Mapa vacio.\n";
+        return false;
+    }
+
+    MAP_H = (int)MAP.size();
+    MAP_W = (int)MAP[0].size();
+
+    // Validar ancho uniforme
+    for (int r = 0; r < MAP_H; r++) {
+        if ((int)MAP[r].size() != MAP_W) {
+            std::cerr << "Fila " << r << " tiene ancho diferente.\n";
+            return false;
+        }
+    }
+
+    // TILE auto: el mapa siempre ~TARGET_WORLD_WIDTH de ancho
+    TILE = TARGET_WORLD_WIDTH / (float)MAP_W;
+
+    std::cout << "Mapa cargado OK: " << MAP_W << "x" << MAP_H << " | TILE=" << TILE << "\n";
+    return true;
+}
+
+static inline bool InBounds(int r, int c) {
+    return r >= 0 && c >= 0 && r < MAP_H && c < MAP_W;
+}
+
+static inline char Cell(int r, int c) {
+    if (!InBounds(r, c)) return '0';
+    return MAP[r][c];
+}
+
+static inline bool Walkable(int r, int c) {
+    char t = Cell(r, c);
+    return t == '1' || t == 'E' || t == 'S';
+}
+
+static inline bool IsExit(int r, int c) { return Cell(r, c) == 'E'; }
+static inline bool IsSpawn(int r, int c) { return Cell(r, c) == 'S'; }
+
+static bool FindSpawn(int& outR, int& outC) {
+    // buscar 'S'
+    for (int r = 0; r < MAP_H; r++) {
+        for (int c = 0; c < MAP_W; c++) {
+            if (IsSpawn(r, c)) { outR = r; outC = c; return true; }
+        }
+    }
+    // fallback: primera '1'
+    for (int r = 0; r < MAP_H; r++) {
+        for (int c = 0; c < MAP_W; c++) {
+            if (Cell(r, c) == '1') { outR = r; outC = c; return true; }
+        }
+    }
+    return false;
+}
+
+static glm::vec3 CellToWorld(int r, int c) {
+    float halfW = (MAP_W * TILE) * 0.5f;
+    float halfH = (MAP_H * TILE) * 0.5f;
+
+    float x = (c * TILE) - halfW;
+    float z = (halfH)-(r * TILE);
+    return glm::vec3(x, 0.0f, z);
 }
 
 // ================= MAIN =================
@@ -145,56 +220,116 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Cuarto + Pasillo + Pared Finals", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LABERINTO (sin texturas) - TXT", nullptr, nullptr);
     glfwMakeContextCurrent(window);
 
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-    gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        std::cerr << "Error al inicializar GLAD\n";
+        return -1;
+    }
     glEnable(GL_DEPTH_TEST);
 
     Shader shader("shaders/B2T3.vs", "shaders/B2T3.fs");
     Shader lightShader("shaders/light_cube.vs", "shaders/light_cube.fs");
 
+    // ===== CARGAR MAPA DESDE TXT =====
+    // Coloca maze.txt en la misma carpeta donde corre el .exe (working directory).
+    if (!LoadMapFromTxt("maze.txt")) {
+        std::cerr << "No se pudo cargar maze.txt\n";
+        return -1;
+    }
+
+    int sr = 0, sc = 0;
+    if (!FindSpawn(sr, sc)) {
+        std::cerr << "No hay 'S' ni '1' en el mapa.\n";
+        return -1;
+    }
+
+    // Luz al centro del mapa
+    {
+        glm::vec3 center = CellToWorld(MAP_H / 2, MAP_W / 2);
+        lightPos = glm::vec3(center.x, 6.0f, center.z);
+    }
+
+    // Cámara en spawn (un poco hacia atrás en Z para que vea algo)
+    {
+        glm::vec3 spawnW = CellToWorld(sr, sc);
+        camera.SetPose(glm::vec3(spawnW.x, 2.0f, spawnW.z + 2.0f), -90.0f, 0.0f);
+    }
+
     // ===== GEOMETRIA BASE =====
     float planeVertices[] = {
         -0.5f,0,-0.5f,  0,1,0,   0,0,
-         0.5f,0,-0.5f,  0,1,0,  10,0,
-         0.5f,0, 0.5f,  0,1,0,  10,10,
-         0.5f,0, 0.5f,  0,1,0,  10,10,
-        -0.5f,0, 0.5f,  0,1,0,   0,10,
+         0.5f,0,-0.5f,  0,1,0,   1,0,
+         0.5f,0, 0.5f,  0,1,0,   1,1,
+         0.5f,0, 0.5f,  0,1,0,   1,1,
+        -0.5f,0, 0.5f,  0,1,0,   0,1,
         -0.5f,0,-0.5f,  0,1,0,   0,0
     };
 
     float wallVertices[] = {
         -0.5f,0,0,  0,0,1,  0,1,
-         0.5f,0,0,  0,0,1,  4,1,
-         0.5f,1,0,  0,0,1,  4,0,
-         0.5f,1,0,  0,0,1,  4,0,
+         0.5f,0,0,  0,0,1,  1,1,
+         0.5f,1,0,  0,0,1,  1,0,
+         0.5f,1,0,  0,0,1,  1,0,
         -0.5f,1,0,  0,0,1,  0,0,
         -0.5f,0,0,  0,0,1,  0,1
     };
 
-    float wallFinalVertices[] = { // UVs 0 a 1 para estiramiento
-        -0.5f,0,0, 0,0,1, 0.0f,1.0f,
-         0.5f,0,0, 0,0,1, 1.0f,1.0f,
-         0.5f,1,0, 0,0,1, 1.0f,0.0f,
-         0.5f,1,0, 0,0,1, 1.0f,0.0f,
-        -0.5f,1,0, 0,0,1, 0.0f,0.0f,
-        -0.5f,0,0, 0,0,1, 0.0f,1.0f
+    // Cubo para la luz
+    float cubeVertices[] = {
+        -0.5f,-0.5f,-0.5f,   0,0,-1, 0,0,
+         0.5f, 0.5f,-0.5f,   0,0,-1, 1,1,
+         0.5f,-0.5f,-0.5f,   0,0,-1, 1,0,
+         0.5f, 0.5f,-0.5f,   0,0,-1, 1,1,
+        -0.5f,-0.5f,-0.5f,   0,0,-1, 0,0,
+        -0.5f, 0.5f,-0.5f,   0,0,-1, 0,1,
+
+        -0.5f,-0.5f, 0.5f,   0,0, 1, 0,0,
+         0.5f,-0.5f, 0.5f,   0,0, 1, 1,0,
+         0.5f, 0.5f, 0.5f,   0,0, 1, 1,1,
+         0.5f, 0.5f, 0.5f,   0,0, 1, 1,1,
+        -0.5f, 0.5f, 0.5f,   0,0, 1, 0,1,
+        -0.5f,-0.5f, 0.5f,   0,0, 1, 0,0,
+
+        -0.5f, 0.5f, 0.5f,  -1,0,0, 1,0,
+        -0.5f, 0.5f,-0.5f,  -1,0,0, 1,1,
+        -0.5f,-0.5f,-0.5f,  -1,0,0, 0,1,
+        -0.5f,-0.5f,-0.5f,  -1,0,0, 0,1,
+        -0.5f,-0.5f, 0.5f,  -1,0,0, 0,0,
+        -0.5f, 0.5f, 0.5f,  -1,0,0, 1,0,
+
+         0.5f, 0.5f, 0.5f,   1,0,0, 1,0,
+         0.5f,-0.5f,-0.5f,   1,0,0, 0,1,
+         0.5f, 0.5f,-0.5f,   1,0,0, 1,1,
+         0.5f,-0.5f,-0.5f,   1,0,0, 0,1,
+         0.5f, 0.5f, 0.5f,   1,0,0, 1,0,
+         0.5f,-0.5f, 0.5f,   1,0,0, 0,0,
+
+        -0.5f,-0.5f,-0.5f,   0,-1,0, 0,1,
+         0.5f,-0.5f,-0.5f,   0,-1,0, 1,1,
+         0.5f,-0.5f, 0.5f,   0,-1,0, 1,0,
+         0.5f,-0.5f, 0.5f,   0,-1,0, 1,0,
+        -0.5f,-0.5f, 0.5f,   0,-1,0, 0,0,
+        -0.5f,-0.5f,-0.5f,   0,-1,0, 0,1,
+
+        -0.5f, 0.5f,-0.5f,   0, 1,0, 0,1,
+         0.5f, 0.5f,-0.5f,   0, 1,0, 1,1,
+         0.5f, 0.5f, 0.5f,   0, 1,0, 1,0,
+         0.5f, 0.5f, 0.5f,   0, 1,0, 1,0,
+        -0.5f, 0.5f, 0.5f,   0, 1,0, 0,0,
+        -0.5f, 0.5f,-0.5f,   0, 1,0, 0,1
     };
 
-    unsigned int floorVAO, floorVBO, wallVAO, wallVBO, wallFinalVAO, wallFinalVBO;
+    unsigned int floorVAO, floorVBO, wallVAO, wallVBO, cubeVAO, cubeVBO;
+
+    // Piso
     glGenVertexArrays(1, &floorVAO);
     glGenBuffers(1, &floorVBO);
-    glGenVertexArrays(1, &wallVAO);
-    glGenBuffers(1, &wallVBO);
-    glGenVertexArrays(1, &wallFinalVAO);
-    glGenBuffers(1, &wallFinalVBO);
-
-    // piso
     glBindVertexArray(floorVAO);
     glBindBuffer(GL_ARRAY_BUFFER, floorVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(planeVertices), planeVertices, GL_STATIC_DRAW);
@@ -202,7 +337,9 @@ int main() {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float))); glEnableVertexAttribArray(2);
 
-    // paredes normales
+    // Pared
+    glGenVertexArrays(1, &wallVAO);
+    glGenBuffers(1, &wallVBO);
     glBindVertexArray(wallVAO);
     glBindBuffer(GL_ARRAY_BUFFER, wallVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(wallVertices), wallVertices, GL_STATIC_DRAW);
@@ -210,33 +347,28 @@ int main() {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float))); glEnableVertexAttribArray(2);
 
-    // pared final
-    glBindVertexArray(wallFinalVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, wallFinalVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(wallFinalVertices), wallFinalVertices, GL_STATIC_DRAW);
+    // Cubo luz
+    glGenVertexArrays(1, &cubeVAO);
+    glGenBuffers(1, &cubeVBO);
+    glBindVertexArray(cubeVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVertices), cubeVertices, GL_STATIC_DRAW);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0); glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float))); glEnableVertexAttribArray(2);
 
-    // ===== TEXTURAS =====
-    unsigned int floorRoomTex = loadTexture("textures/TextruaP1.png");
-    unsigned int wallRoomTex = loadTexture("textures/Pared4.png");
-    unsigned int floorHallTex = loadTexture("textures/gradas1.png");
-    unsigned int wallHallTex = loadTexture("textures/PAREDPASILLO3.png");
-    unsigned int wallEndTex = loadTexture("textures/Finalpa2.png"); // pared final
-
     // ================= LOOP =================
     while (!glfwWindowShouldClose(window)) {
-        float time = glfwGetTime();
+        float time = (float)glfwGetTime();
         deltaTime = time - lastFrame;
         lastFrame = time;
 
         processInput(window);
 
-        glClearColor(0.08f, 0.08f, 0.08f, 1);
+        glClearColor(0.08f, 0.08f, 0.08f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / SCR_HEIGHT, 0.1f, 100.0f);
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / SCR_HEIGHT, 0.1f, 250.0f);
         glm::mat4 view = camera.GetViewMatrix();
 
         shader.use();
@@ -249,8 +381,8 @@ int main() {
         if (linternaEncendida) {
             shader.setVec3("spotLightPos", camera.Position);
             shader.setVec3("spotLightDir", camera.Front);
-            shader.setFloat("spotCutOff", glm::cos(glm::radians(15.0f)));       // corte interno
-            shader.setFloat("spotOuterCutOff", glm::cos(glm::radians(25.0f)));  // borde suave
+            shader.setFloat("spotCutOff", glm::cos(glm::radians(15.0f)));
+            shader.setFloat("spotOuterCutOff", glm::cos(glm::radians(25.0f)));
         }
         else {
             shader.setVec3("spotLightPos", glm::vec3(0));
@@ -259,84 +391,80 @@ int main() {
             shader.setFloat("spotOuterCutOff", 0.0f);
         }
 
+        // ===== DIBUJAR SUELO + PAREDES =====
+        for (int r = 0; r < MAP_H; r++) {
+            for (int c = 0; c < MAP_W; c++) {
+                if (!Walkable(r, c)) continue;
 
-        // ===== PISO CUARTO =====
-        glBindTexture(GL_TEXTURE_2D, floorRoomTex);
-        glBindVertexArray(floorVAO);
-        glm::mat4 model = glm::scale(glm::mat4(1), glm::vec3(ROOM_SIZE));
-        shader.setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+                glm::vec3 w = CellToWorld(r, c);
 
-        // ===== PAREDES CUARTO =====
-        glBindTexture(GL_TEXTURE_2D, wallRoomTex);
-        glBindVertexArray(wallVAO);
+                // ----- Suelo -----
+                glBindVertexArray(floorVAO);
+                glm::mat4 model = glm::mat4(1.0f);
+                model = glm::translate(model, glm::vec3(w.x, 0.0f, w.z));
+                model = glm::scale(model, glm::vec3(TILE, 1.0f, TILE));
+                shader.setMat4("model", model);
 
-        model = glm::translate(glm::mat4(1), glm::vec3(-ROOM_SIZE / 2, 0, 0));
-        model = glm::rotate(model, glm::radians(90.f), glm::vec3(0, 1, 0));
-        model = glm::scale(model, glm::vec3(ROOM_SIZE, WALL_HEIGHT, 1));
-        shader.setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+                // colores sólidos (solo referencia)
+                shader.setVec3("baseColor", IsExit(r, c) ? glm::vec3(0.55f, 0.20f, 0.65f) : glm::vec3(0.78f, 0.65f, 0.20f));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
 
-        model = glm::translate(glm::mat4(1), glm::vec3(ROOM_SIZE / 2, 0, 0));
-        model = glm::rotate(model, glm::radians(-90.f), glm::vec3(0, 1, 0));
-        model = glm::scale(model, glm::vec3(ROOM_SIZE, WALL_HEIGHT, 1));
-        shader.setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+                // ----- Paredes por borde -----
+                glBindVertexArray(wallVAO);
+                shader.setVec3("baseColor", glm::vec3(0.90f, 0.90f, 0.90f));
 
-        model = glm::translate(glm::mat4(1), glm::vec3(0, 0, -ROOM_SIZE / 2));
-        model = glm::scale(model, glm::vec3(ROOM_SIZE, WALL_HEIGHT, 1));
-        shader.setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+                // Norte (r-1,c)
+                if (!Walkable(r - 1, c)) {
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, glm::vec3(w.x, 0.0f, w.z + TILE * 0.5f));
+                    model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0, 1, 0));
+                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
+                    shader.setMat4("model", model);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                }
 
-        float half = ROOM_SIZE / 2 - HUECO_PASILLO / 2;
-        model = glm::translate(glm::mat4(1), glm::vec3(-half / 2 - HUECO_PASILLO / 2, 0, ROOM_SIZE / 2));
-        model = glm::scale(model, glm::vec3(half, WALL_HEIGHT, 1));
-        shader.setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+                // Sur (r+1,c)
+                if (!Walkable(r + 1, c)) {
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, glm::vec3(w.x, 0.0f, w.z - TILE * 0.5f));
+                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
+                    shader.setMat4("model", model);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                }
 
-        model = glm::translate(glm::mat4(1), glm::vec3(half / 2 + HUECO_PASILLO / 2, 0, ROOM_SIZE / 2));
-        model = glm::scale(model, glm::vec3(half, WALL_HEIGHT, 1));
-        shader.setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+                // Oeste (r,c-1)
+                if (!Walkable(r, c - 1)) {
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, glm::vec3(w.x - TILE * 0.5f, 0.0f, w.z));
+                    model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0, 1, 0));
+                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
+                    shader.setMat4("model", model);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                }
 
-        // ===== PASILLO =====
-        glBindTexture(GL_TEXTURE_2D, floorHallTex);
-        glBindVertexArray(floorVAO);
-        model = glm::translate(glm::mat4(1), glm::vec3(0, 0, ROOM_SIZE / 2 + 10));
-        model = glm::scale(model, glm::vec3(HUECO_PASILLO, 1, PASILLO_LENGTH));
-        shader.setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-
-        glBindTexture(GL_TEXTURE_2D, wallHallTex);
-        glBindVertexArray(wallVAO);
-
-        model = glm::translate(glm::mat4(1), glm::vec3(-HUECO_PASILLO / 2, 0, ROOM_SIZE / 2 + 10));
-        model = glm::rotate(model, glm::radians(90.f), glm::vec3(0, 1, 0));
-        model = glm::scale(model, glm::vec3(PASILLO_LENGTH, WALL_HEIGHT, 1));
-        shader.setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-
-        model = glm::translate(glm::mat4(1), glm::vec3(HUECO_PASILLO / 2, 0, ROOM_SIZE / 2 + 10));
-        model = glm::rotate(model, glm::radians(-90.f), glm::vec3(0, 1, 0));
-        model = glm::scale(model, glm::vec3(PASILLO_LENGTH, WALL_HEIGHT, 1));
-        shader.setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-
-        // ===== PARED FINAL =====
-        glBindTexture(GL_TEXTURE_2D, wallEndTex);
-        glBindVertexArray(wallFinalVAO);
-        model = glm::translate(glm::mat4(1), glm::vec3(0, 0, ROOM_SIZE / 2 + PASILLO_LENGTH));
-        model = glm::scale(model, glm::vec3(HUECO_PASILLO, WALL_HEIGHT, 1.0f));
-        shader.setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+                // Este (r,c+1)
+                if (!Walkable(r, c + 1)) {
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, glm::vec3(w.x + TILE * 0.5f, 0.0f, w.z));
+                    model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0, 1, 0));
+                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
+                    shader.setMat4("model", model);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                }
+            }
+        }
 
         // ===== CUBO LUZ =====
         lightShader.use();
         lightShader.setMat4("projection", projection);
         lightShader.setMat4("view", view);
-        model = glm::translate(glm::mat4(1), lightPos);
-        model = glm::scale(model, glm::vec3(0.4f));
-        lightShader.setMat4("model", model);
+
+        glm::mat4 mLight = glm::mat4(1.0f);
+        mLight = glm::translate(mLight, lightPos);
+        mLight = glm::scale(mLight, glm::vec3(LIGHT_CUBE_SCALE));
+        lightShader.setMat4("model", mLight);
+
+        glBindVertexArray(cubeVAO);
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
         glfwSwapBuffers(window);

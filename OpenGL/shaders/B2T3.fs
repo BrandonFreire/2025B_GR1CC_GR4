@@ -56,7 +56,7 @@ void main()
         float diffSpot = max(dot(norm, -dirToFrag), 0.0);
         vec3 diffuseSpot = diffSpot * vec3(0.85, 0.85, 1.00) * intensity * att;
 
-        vec3 reflectSpot = reflect(dirToFrag, norm);
+        vec3 reflectSpot = reflect(-dirToFrag, norm);
         float specSpot = pow(max(dot(viewDir, reflectSpot), 0.0), 64.0);
         vec3 specularSpot = vec3(0.95, 0.95, 1.00) * specSpot * intensity * att;
 

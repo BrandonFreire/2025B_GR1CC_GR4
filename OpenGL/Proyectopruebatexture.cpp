@@ -16,6 +16,22 @@
 #include <vector>
 #include <string>
 
+#include <queue>      
+#include <algorithm>   
+
+// Estructura simple para coordenadas de grid
+struct Point { int r, c; };
+
+// Estructura del Enemigo
+struct Enemy {
+    glm::vec3 pos;      // Posición suave (interpolada) en el mundo
+    int r, c;           // Posición lógica actual en el grid
+    float speed = 2.5f; // Velocidad de movimiento
+};
+
+// Variables globales para los enemigos
+Enemy enemy1, enemy2;
+
 // ================= CONFIG =================
 // prototipos colisión (para que processInput los vea)
 static inline void MoveWithCollision(const glm::vec3& deltaXZ);
@@ -287,8 +303,6 @@ static inline bool CollidesAt(float x, float z) {
 }
 
 
-
-
 // Movimiento con colisión y "slide": intenta X y Z por separado
 static inline void MoveWithCollision(const glm::vec3& deltaXZ) {
     glm::vec3 pos = camera.Position;
@@ -335,6 +349,115 @@ static bool FindSpawn(int& outR, int& outC) {
     return false;
 }
 
+// Convierte posición de Mundo a Grid (Inverso de CellToWorld)
+static Point WorldToCell(glm::vec3 pos) {
+    float halfW = (MAP_W * TILE) * 0.5f;
+    float halfH = (MAP_H * TILE) * 0.5f;
+    // Invertimos la fórmula de CellToWorld
+    int c = (int)((pos.x + halfW) / TILE);
+    int r = (int)((halfH - pos.z) / TILE);
+    return { r, c };
+}
+
+// ALGORITMO BFS: Encuentra el siguiente paso inmediato hacia el objetivo
+// Retorna la coordenada (r, c) a la que el enemigo debe moverse
+static Point GetNextStepBFS(int startR, int startC, int targetR, int targetC) {
+    // Si ya está en el destino, quedarse ahí
+    if (startR == targetR && startC == targetC) return { startR, startC };
+
+    // Direcciones: Arriba, Abajo, Izquierda, Derecha
+    int dr[] = { -1, 1, 0, 0 };
+    int dc[] = { 0, 0, -1, 1 };
+
+    // Estructuras para BFS
+    bool visited[200][200]; // Ajustar tamaño según tu mapa máximo o usar vector dinámico
+    Point parent[200][200]; // Para reconstruir el camino
+
+    // Inicializar visited en false (simple memset o loops)
+    for (int i = 0; i < MAP_H; i++)
+        for (int j = 0; j < MAP_W; j++) visited[i][j] = false;
+
+    std::queue<Point> q;
+    q.push({ startR, startC });
+    visited[startR][startC] = true;
+    parent[startR][startC] = { -1, -1 };
+
+    bool found = false;
+
+    while (!q.empty()) {
+        Point curr = q.front();
+        q.pop();
+
+        if (curr.r == targetR && curr.c == targetC) {
+            found = true;
+            break;
+        }
+
+        // Explorar vecinos
+        for (int i = 0; i < 4; i++) {
+            int nr = curr.r + dr[i];
+            int nc = curr.c + dc[i];
+
+            // Validar límites y que sea suelo (IsFloor es tu función existente)
+            if (InBounds(nr, nc) && !visited[nr][nc] && IsFloor(nr, nc)) {
+                visited[nr][nc] = true;
+                parent[nr][nc] = curr;
+                q.push({ nr, nc });
+            }
+        }
+    }
+
+    if (!found) return { startR, startC }; // No hay camino
+
+    // Reconstruir camino desde el Target hacia atrás hasta llegar al hijo del Start
+    Point curr = { targetR, targetC };
+    while (true) {
+        Point p = parent[curr.r][curr.c];
+        if (p.r == startR && p.c == startC) {
+            return curr; // Este es el siguiente paso inmediato
+        }
+        curr = p;
+    }
+}
+
+static void SpawnEnemies(glm::vec3 playerPos) {
+    Point pCell = WorldToCell(playerPos);
+    int spawnedCount = 0;
+
+    // Distancias en celdas (Grid)
+    int minDist = 5;  // No aparecer pegado al jugador
+    int maxDist = 15; // No aparecer al otro lado del mapa
+
+    // Intentos aleatorios para encontrar posición válida
+    for (int i = 0; i < 1000; i++) {
+        int r = rand() % MAP_H;
+        int c = rand() % MAP_W;
+
+        if (IsFloor(r, c)) {
+            float dPlayer = glm::distance(glm::vec2(r, c), glm::vec2(pCell.r, pCell.c));
+
+            if (dPlayer > minDist && dPlayer < maxDist) {
+                // Configurar enemigo 1
+                if (spawnedCount == 0) {
+                    enemy1.r = r; enemy1.c = c;
+                    enemy1.pos = CellToWorld(r, c);
+                    spawnedCount++;
+                }
+                // Configurar enemigo 2 (verificar que no esté cerca del 1)
+                else if (spawnedCount == 1) {
+                    float dEnemy1 = glm::distance(glm::vec2(r, c), glm::vec2(enemy1.r, enemy1.c));
+                    if (dEnemy1 > 5) { // Separados al menos 5 casillas
+                        enemy2.r = r; enemy2.c = c;
+                        enemy2.pos = CellToWorld(r, c);
+                        spawnedCount++;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    std::cout << "Enemigos spawneados: " << spawnedCount << "\n";
+}
 
 
 // ================= MAIN =================
@@ -466,6 +589,11 @@ int main() {
     if (!FindSpawn(sr, sc)) { sr = 0; sc = 0; }
     glm::vec3 spawnW = CellToWorld(sr, sc);
     camera.SetPose(glm::vec3(spawnW.x, 2.0f, spawnW.z), 180.0f, 0.0f);
+
+
+    // === NUEVO: INICIALIZAR ENEMIGOS ===
+    srand((unsigned int)glfwGetTime()); // Semilla random
+    SpawnEnemies(camera.Position);
 
     // ================= LOOP =================
     while (!glfwWindowShouldClose(window)) {
@@ -603,6 +731,49 @@ int main() {
                 }
 
             }
+        }
+
+        // ================= ACTUALIZAR ENEMIGOS (IA) =================
+        // Haremos que recalcule el camino frame a frame hacia el centro de la siguiente celda
+        Point playerGrid = WorldToCell(camera.Position);
+
+        Enemy* enemies[] = { &enemy1, &enemy2 };
+        for (Enemy* e : enemies) {
+            // 1. Calcular siguiente casilla ideal con BFS
+            Point nextCell = GetNextStepBFS(e->r, e->c, playerGrid.r, playerGrid.c);
+
+            // 2. Obtener posición world del centro de esa casilla
+            glm::vec3 targetWorld = CellToWorld(nextCell.r, nextCell.c);
+
+            // 3. Moverse suavemente hacia ese objetivo
+            glm::vec3 dir = targetWorld - e->pos;
+            if (glm::length(dir) > 0.01f) {
+                dir = glm::normalize(dir);
+                e->pos += dir * e->speed * deltaTime;
+            }
+
+            // 4. Si está muy cerca del centro de la casilla objetivo, actualizar su grid lógico
+            if (glm::distance(e->pos, targetWorld) < 0.1f) {
+                e->r = nextCell.r;
+                e->c = nextCell.c;
+            }
+        }
+
+        // ================= DIBUJAR ENEMIGOS =================
+        // Usamos el shader principal (tiene luz y sombras)
+        shader.use();
+
+        // Color rojo amenazante para los enemigos
+        shader.setVec3("baseColor", glm::vec3(0.8f, 0.0f, 0.0f));
+
+        for (Enemy* e : enemies) {
+            glBindVertexArray(cubeVAO); // Reusamos el cubo de la luz
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, e->pos);
+            // Hacemos el enemigo un poco más pequeño que el Tile para que no atraviese paredes visualmente
+            model = glm::scale(model, glm::vec3(0.4f));
+            shader.setMat4("model", model);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
         }
 
         // ===== CUBO LUZ =====

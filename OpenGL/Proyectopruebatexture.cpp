@@ -5,10 +5,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include <leranopengl/shader.h>
+#include <learnopengl/shader.h>
 
-//#define STB_IMAGE_IMPLEMENTATION
-#include <leranopengl/stb_image.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include <learnopengl/stb_image.h>
 
 #include <iostream>
 #include <fstream>
@@ -33,15 +33,15 @@ Enemy enemy1, enemy2;
 
 // ================= CUBOS COLECCIONABLES =================
 struct Collectible {
- glm::vec3 pos; // Posición en el mundo
- bool collected; // Si ya fue recogido
- int r, c; // Celda del grid
- bool isPreview = false; // Si es un preview (no cuenta en el total)
+    glm::vec3 pos; // Posición en el mundo
+    bool collected; // Si ya fue recogido
+    int r, c; // Celda del grid
+    bool isPreview = false; // Si es un preview (no cuenta en el total)
 };
 
 std::vector<Collectible> collectibles;
-int collectedCount =0;
-const int TOTAL_COLLECTIBLES =5;
+int collectedCount = 0;
+const int TOTAL_COLLECTIBLES = 5;
 
 // ================= CONFIG =================
 // prototipos colisión (para que processInput los vea)
@@ -274,7 +274,7 @@ static inline bool IsFloor(int r, int c) {
 
 // helper: exit and spawn checks
 static inline bool IsExit(int r, int c) { return Cell(r, c) == 'E'; }
-static inline bool IsSpawn(int r, int c) { char t = Cell(r,c); return t == 'S' || t == 's'; }
+static inline bool IsSpawn(int r, int c) { char t = Cell(r, c); return t == 'S' || t == 's'; }
 
 
 static inline bool IsWall(int r, int c) {
@@ -522,75 +522,76 @@ static void SpawnEnemies(glm::vec3 playerPos) {
 }
 
 static void SpawnCollectibles(const glm::vec3& playerPos) {
- collectibles.clear();
- collectedCount =0;
+    collectibles.clear();
+    collectedCount = 0;
 
- Point pCell = WorldToCell(playerPos);
+    Point pCell = WorldToCell(playerPos);
 
- int zonesR = TOTAL_COLLECTIBLES; // una zona por collectible
- int zoneHeight = std::max(1, MAP_H / zonesR);
+    int zonesR = TOTAL_COLLECTIBLES; // una zona por collectible
+    int zoneHeight = std::max(1, MAP_H / zonesR);
 
- for (int zone =0; zone < TOTAL_COLLECTIBLES; zone++) {
- int zoneStartR = zone * zoneHeight;
- int zoneEndR = (zone == zonesR -1) ? MAP_H : std::min(MAP_H, (zone +1) * zoneHeight);
+    for (int zone = 0; zone < TOTAL_COLLECTIBLES; zone++) {
+        int zoneStartR = zone * zoneHeight;
+        int zoneEndR = (zone == zonesR - 1) ? MAP_H : std::min(MAP_H, (zone + 1) * zoneHeight);
 
- bool found = false;
- for (int attempts =0; attempts <500 && !found; attempts++) {
- int r = zoneStartR + (zoneEndR - zoneStartR >0 ? rand() % (zoneEndR - zoneStartR) :0);
- int c = rand() % std::max(1, MAP_W);
+        bool found = false;
+        for (int attempts = 0; attempts < 500 && !found; attempts++) {
+            int r = zoneStartR + (zoneEndR - zoneStartR > 0 ? rand() % (zoneEndR - zoneStartR) : 0);
+            int c = rand() % std::max(1, MAP_W);
 
- if (InBounds(r, c) && IsFloor(r, c)) {
- float dPlayer = glm::distance(glm::vec2(r, c), glm::vec2(pCell.r, pCell.c));
- if (dPlayer >3.0f) {
- bool tooClose = false;
- for (const auto& col : collectibles) {
- float d = glm::distance(glm::vec2(r, c), glm::vec2(col.r, col.c));
- if (d <5.0f) { tooClose = true; break; }
- }
- if (!tooClose) {
- Collectible newCol;
- newCol.r = r; newCol.c = c;
- newCol.pos = CellToWorld(r, c);
- newCol.pos.y =1.5f;
- newCol.collected = false;
- newCol.isPreview = false;
- collectibles.push_back(newCol);
- found = true;
- }
- }
- }
- }
- }
- std::cout << "Cubos coleccionables spawneados: " << collectibles.size() << " de " << TOTAL_COLLECTIBLES << "\n";
+            if (InBounds(r, c) && IsFloor(r, c)) {
+                float dPlayer = glm::distance(glm::vec2(r, c), glm::vec2(pCell.r, pCell.c));
+                if (dPlayer > 3.0f) {
+                    bool tooClose = false;
+                    for (const auto& col : collectibles) {
+                        float d = glm::distance(glm::vec2(r, c), glm::vec2(col.r, col.c));
+                        if (d < 5.0f) { tooClose = true; break; }
+                    }
+                    if (!tooClose) {
+                        Collectible newCol;
+                        newCol.r = r; newCol.c = c;
+                        newCol.pos = CellToWorld(r, c);
+                        newCol.pos.y = 1.5f;
+                        newCol.collected = false;
+                        newCol.isPreview = false;
+                        collectibles.push_back(newCol);
+                        found = true;
+                    }
+                }
+            }
+        }
+    }
+    std::cout << "Cubos coleccionables spawneados: " << collectibles.size() << " de " << TOTAL_COLLECTIBLES << "\n";
 }
 
 static void CheckCollectibles(const glm::vec3& playerPos, GLFWwindow* window) {
- const float COLLECT_RADIUS =0.8f;
+    const float COLLECT_RADIUS = 0.8f;
 
- for (auto& col : collectibles) {
- if (col.collected) continue;
+    for (auto& col : collectibles) {
+        if (col.collected) continue;
 
- float dist = glm::distance(glm::vec2(playerPos.x, playerPos.z), glm::vec2(col.pos.x, col.pos.z));
- if (dist < COLLECT_RADIUS) {
- col.collected = true;
- if (!col.isPreview) {
- collectedCount++;
- }
+        float dist = glm::distance(glm::vec2(playerPos.x, playerPos.z), glm::vec2(col.pos.x, col.pos.z));
+        if (dist < COLLECT_RADIUS) {
+            col.collected = true;
+            if (!col.isPreview) {
+                collectedCount++;
+            }
 
- // Actualizar título
- std::string title;
- if (collectedCount < TOTAL_COLLECTIBLES) {
- title = "LABERINTO - Cubos recogidos: " + std::to_string(collectedCount) + " de " + std::to_string(TOTAL_COLLECTIBLES);
- std::cout << "=== CUBO RECOGIDO! " << collectedCount << " de " << TOTAL_COLLECTIBLES << " cubos ===\n";
- } else {
- title = "LABERINTO - HAS RECOGIDO TODOS LOS CUBOS!!!";
- std::cout << "==============================================\n";
- std::cout << " HAS RECOGIDO TODOS LOS CUBOS!!! \n";
- std::cout << "==============================================\n";
- }
- if (window) glfwSetWindowTitle(window, title.c_str());
- }
- }
+            // Actualizar título
+            std::string title;
+            if (collectedCount < TOTAL_COLLECTIBLES) {
+                title = "LABERINTO - Cubos recogidos: " + std::to_string(collectedCount) + " de " + std::to_string(TOTAL_COLLECTIBLES);
+                std::cout << "=== CUBO RECOGIDO! " << collectedCount << " de " << TOTAL_COLLECTIBLES << " cubos ===\n";
+            }
+            else {
+                title = "LABERINTO - HAS RECOGIDO TODOS LOS CUBOS!!!";
+                std::cout << "==============================================\n";
+                std::cout << " HAS RECOGIDO TODOS LOS CUBOS!!! \n";
+                std::cout << "==============================================\n";
+            }
+            if (window) glfwSetWindowTitle(window, title.c_str());
+        }
+    }
 }
 
 
@@ -613,35 +614,32 @@ static unsigned int loadTexture(const char* path) {
     }
 
     if (data) {
- GLenum format = GL_RGB;
- if (c ==1) format = GL_RED;
- else if (c ==3) format = GL_RGB;
- else if (c ==4) format = GL_RGBA;
+        GLenum format = GL_RGB;
+        if (c == 1) format = GL_RED;
+        else if (c == 3) format = GL_RGB;
+        else if (c == 4) format = GL_RGBA;
 
- glBindTexture(GL_TEXTURE_2D, id);
- glTexImage2D(GL_TEXTURE_2D,0, format, w, h,0, format, GL_UNSIGNED_BYTE, data);
- glGenerateMipmap(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, id);
+        glTexImage2D(GL_TEXTURE_2D, 0, format, w, h, 0, format, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
 
- glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
- glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
- glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
- glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
- }
- else {
- std::cout << "Texture failed to load at path: " << path << std::endl;
- }
- stbi_image_free(data);
- return id;
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    }
+    else {
+        std::cout << "Texture failed to load at path: " << path << std::endl;
+    }
+    stbi_image_free(data);
+    return id;
 }
 
 // ================= MAIN =================
+
 int main() {
-    // 1) Cargar mapa ANTES de crear OpenGL (así si falla, no pierdes tiempo)
-    // Ruta recomendada: el archivo junto al .exe (o junto al proyecto ejecutando desde VS)
-    if (!LoadMapFromTxt("../maze.txt")) {
-        std::cerr << "ERROR: No se pudo cargar maze.txt\n";
-        return -1;
-    }
+    if (!LoadMapFromTxt("maze.txt")) { std::cerr << "ERROR: No se pudo cargar maze.txt\n"; return -1; }
+
 
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -663,7 +661,7 @@ int main() {
 
     Shader shader("shaders/B2T3.vs", "shaders/B2T3.fs");
     if (shader.ID == 0) shader = Shader("shaders/B2T3.vs", "shaders/B2T3.fs");
-    
+
     Shader lightShader("shaders/light_cube.vs", "shaders/light_cube.fs");
     if (lightShader.ID == 0) lightShader = Shader("shaders/light_cube.vs", "shaders/light_cube.fs");
 
@@ -693,38 +691,48 @@ int main() {
 
     unsigned int startTex = loadTexture("textures/portada.png");
     screenShader.use();
-    screenShader.setInt("screenTex",0);
+    screenShader.setInt("screenTex", 0);
 
- // ===== TEXTURAS =====
- unsigned int floorRoomTex = loadTexture("textures/TextruaP1.png");
- // restore: room walls use Pared4, hall walls use PAREDPASILLO3
- unsigned int wallRoomTex = loadTexture("textures/Pared4.png");
- unsigned int floorHallTex = loadTexture("textures/gradas1.png");
- unsigned int wallHallTex = loadTexture("textures/PAREDPASILLO3.png");
- // make hall wall texture clamp so it doesn't repeat when UV outside0..1
- glBindTexture(GL_TEXTURE_2D, wallHallTex);
- glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
- glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    // ===== TEXTURAS =====
+    unsigned int floorRoomTex = loadTexture("textures/TextruaP1.png");
+    // restore: room walls use Pared4, hall walls use multiple pasillo textures
+    unsigned int wallRoomTex = loadTexture("textures/Pared4.png");
+    unsigned int floorHallTex = loadTexture("textures/gradas1.png");
 
- unsigned int wallEndTex = loadTexture("textures/Finalpa2.png"); // pared final
- unsigned int harrybotTex = loadTexture("textures/Francisbot.png");
- // startTex ya cargada arriba para la pantalla
+    // load a sequence of pasillo textures (pattern: pasillo1..pasillo6)
+    unsigned int wallHallTex[6];
+    wallHallTex[0] = loadTexture("textures/pasillo1.png");
+    wallHallTex[1] = loadTexture("textures/pasillo2.png");
+    wallHallTex[2] = loadTexture("textures/pasillo3.png");
+    wallHallTex[3] = loadTexture("textures/pasillo4.png");
+    wallHallTex[4] = loadTexture("textures/pasillo5.png");
+    wallHallTex[5] = loadTexture("textures/pasillo6.png");
 
- // Asegurar que el shader use la unidad de textura0 para 'texture1'
- shader.use();
- shader.setInt("texture1",0);
+    // make the texture that's now used for hall walls clamp so it doesn't repeat when UV outside0..1
+    // NOTE: keep clamp for wallRoomTex as before
+    glBindTexture(GL_TEXTURE_2D, wallRoomTex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
- bool gameStarted = false;
- bool lastEnter = false;
+    unsigned int wallEndTex = loadTexture("textures/Finalpa2.png"); // pared final
+    unsigned int harrybotTex = loadTexture("textures/Francisbot.png");
+    // startTex ya cargada arriba para la pantalla
 
- // ===== GEOMETRIA BASE =====
- float planeVertices[] = {
-        -0.5f,0,-0.5f,  0,1,0,   0,0,
-         0.5f,0,-0.5f,  0,1,0,   1,0,
-         0.5f,0, 0.5f,  0,1,0,   1,1,
-         0.5f,0, 0.5f,  0,1,0,   1,1,
-        -0.5f,0, 0.5f,  0,1,0,   0,1,
-        -0.5f,0,-0.5f,  0,1,0,   0,0
+    // Asegurar que el shader use la unidad de textura0 para 'texture1'
+    shader.use();
+    shader.setInt("texture1", 0);
+
+    bool gameStarted = false;
+    bool lastEnter = false;
+
+    // ===== GEOMETRIA BASE =====
+    float planeVertices[] = {
+           -0.5f,0,-0.5f,  0,1,0,   0,0,
+            0.5f,0,-0.5f,  0,1,0,   1,0,
+            0.5f,0, 0.5f,  0,1,0,   1,1,
+            0.5f,0, 0.5f,  0,1,0,   1,1,
+           -0.5f,0, 0.5f,  0,1,0,   0,1,
+           -0.5f,0,-0.5f,  0,1,0,   0,0
     };
 
     float wallVertices[] = {
@@ -827,9 +835,9 @@ int main() {
     // crear un collectible preview al lado del jugador para ver cómo es
     Collectible preview;
     // colocar1 unidad delante de la cámara en XZ
-    glm::vec3 ahead = camera.Position + glm::normalize(glm::vec3(camera.Front.x,0.0f, camera.Front.z)) * (TILE *0.75f);
+    glm::vec3 ahead = camera.Position + glm::normalize(glm::vec3(camera.Front.x, 0.0f, camera.Front.z)) * (TILE * 0.75f);
     preview.pos = ahead;
-    preview.pos.y =1.5f;
+    preview.pos.y = 1.5f;
     preview.collected = false;
     preview.isPreview = true;
     Point pc = WorldToCell(preview.pos);
@@ -896,138 +904,167 @@ int main() {
         }
 
         // ===== DIBUJAR SUELO + PAREDES =====
-        for (int r =0; r < MAP_H; r++) {
- for (int c =0; c < MAP_W; c++) {
- if (!IsFloor(r, c)) continue;
+        for (int r = 0; r < MAP_H; r++) {
+            for (int c = 0; c < MAP_W; c++) {
+                if (!IsFloor(r, c)) continue;
 
- glm::vec3 w = CellToWorld(r, c);
+                glm::vec3 w = CellToWorld(r, c);
 
- // ----- Suelo -----
- glBindVertexArray(floorVAO);
- glm::mat4 model = glm::mat4(1.0f);
- model = glm::translate(model, glm::vec3(w.x,0.0f, w.z));
- model = glm::scale(model, glm::vec3(TILE,1.0f, TILE));
- shader.setMat4("model", model);
+                // ----- Suelo -----
+                glBindVertexArray(floorVAO);
+                glm::mat4 model = glm::mat4(1.0f);
+                model = glm::translate(model, glm::vec3(w.x, 0.0f, w.z));
+                model = glm::scale(model, glm::vec3(TILE, 1.0f, TILE));
+                shader.setMat4("model", model);
 
- shader.setBool("useTexture", true);
- shader.setBool("useWorldUV", false);
- shader.setVec2("texScale2", glm::vec2(0.5f,0.5f));
- shader.setBool("flipTexY", false);
- glActiveTexture(GL_TEXTURE0);
- glBindTexture(GL_TEXTURE_2D, floorRoomTex);
- shader.setVec3("baseColor", glm::vec3(1.0f));
- glDrawArrays(GL_TRIANGLES,0,6);
+                shader.setBool("useTexture", true);
+                shader.setBool("useWorldUV", false);
+                shader.setVec2("texScale2", glm::vec2(0.5f, 0.5f));
+                shader.setBool("flipTexY", false);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, floorRoomTex);
+                shader.setVec3("baseColor", glm::vec3(1.0f));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
 
- shader.setBool("useTexture", false);
- shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
+                shader.setBool("useTexture", false);
+                shader.setVec2("texScale2", glm::vec2(1.0f, 1.0f));
 
- // ----- Techo (sin textura) -----
- glBindVertexArray(floorVAO);
- glm::mat4 roof = glm::mat4(1.0f);
- roof = glm::translate(roof, glm::vec3(w.x, WALL_HEIGHT, w.z));
- roof = glm::scale(roof, glm::vec3(TILE,1.0f, TILE));
- shader.setMat4("model", roof);
- shader.setBool("useTexture", false);
- shader.setVec3("baseColor",0.25f,0.25f,0.25f);
- glDrawArrays(GL_TRIANGLES,0,6);
+                // ----- Techo (sin textura) -----
+                glBindVertexArray(floorVAO);
+                glm::mat4 roof = glm::mat4(1.0f);
+                roof = glm::translate(roof, glm::vec3(w.x, WALL_HEIGHT, w.z));
+                roof = glm::scale(roof, glm::vec3(TILE, 1.0f, TILE));
+                shader.setMat4("model", roof);
+                shader.setBool("useTexture", false);
+                shader.setVec3("baseColor", 0.25f, 0.25f, 0.25f);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
 
- // ----- Paredes (bordes) por cara -----
- glBindVertexArray(wallVAO);
- shader.setVec3("baseColor", glm::vec3(0.90f,0.90f,0.90f));
+                // ----- Paredes (bordes) por cara -----
+                glBindVertexArray(wallVAO);
+                shader.setVec3("baseColor", glm::vec3(0.90f, 0.90f, 0.90f));
 
- // Norte (r-1)
- if (!InBounds(r -1, c) || IsWall(r -1, c)) {
- int t = InBounds(r -1, c) ? WallType(r -1, c) :0;
- unsigned int wallTex = (t ==2) ? wallHallTex : wallRoomTex;
+                // Norte (r-1)
+                if (!InBounds(r -1, c) || IsWall(r -1, c)) {
+                    int nr = r -1;
+                    int nc = c;
+                    int t = InBounds(nr, nc) ? WallType(nr, nc) :0;
+                    unsigned int wallTex;
+                    if (t ==2) wallTex = wallRoomTex;
+                    else {
+                        int idx = ((nc %6) +6) %6; // pattern across columns
+                        wallTex = wallHallTex[idx];
+                    }
 
- shader.setBool("useTexture", true);
- shader.setBool("useWorldUV", false);
- shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
- shader.setBool("flipTexY", false);
- glActiveTexture(GL_TEXTURE0);
- glBindTexture(GL_TEXTURE_2D, wallTex);
- shader.setVec3("baseColor", glm::vec3(1.0f));
+                    shader.setBool("useTexture", true);
+                    shader.setBool("useWorldUV", false);
+                    shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
+                    // flip vertically only for hall textures to fix inverted pattern
+                    shader.setBool("flipTexY", (t ==2) ? false : true);
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, wallTex);
+                    shader.setVec3("baseColor", glm::vec3(1.0f));
 
- model = glm::mat4(1.0f);
- model = glm::translate(model, glm::vec3(w.x,0.0f, w.z + TILE *0.5f));
- model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0,1,0));
- model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT,1.0f));
- shader.setMat4("model", model);
- glDrawArrays(GL_TRIANGLES,0,6);
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, glm::vec3(w.x,0.0f, w.z + TILE *0.5f));
+                    model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0,1,0));
+                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT,1.0f));
+                    shader.setMat4("model", model);
+                    glDrawArrays(GL_TRIANGLES,0,6);
 
- shader.setBool("useTexture", false);
- }
+                    shader.setBool("useTexture", false);
+                }
 
- // Sur (r+1)
- if (!InBounds(r +1, c) || IsWall(r +1, c)) {
- int t = InBounds(r +1, c) ? WallType(r +1, c) :0;
- unsigned int wallTex = (t ==2) ? wallHallTex : wallRoomTex;
+                // Sur (r+1)
+                if (!InBounds(r +1, c) || IsWall(r +1, c)) {
+                    int nr = r +1;
+                    int nc = c;
+                    int t = InBounds(nr, nc) ? WallType(nr, nc) :0;
+                    unsigned int wallTex;
+                    if (t ==2) wallTex = wallRoomTex;
+                    else {
+                        int idx = ((nc %6) +6) %6;
+                        wallTex = wallHallTex[idx];
+                    }
 
- shader.setBool("useTexture", true);
- shader.setBool("useWorldUV", false);
- shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
- shader.setBool("flipTexY", false);
- glActiveTexture(GL_TEXTURE0);
- glBindTexture(GL_TEXTURE_2D, wallTex);
- shader.setVec3("baseColor", glm::vec3(1.0f));
+                    shader.setBool("useTexture", true);
+                    shader.setBool("useWorldUV", false);
+                    shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
+                    shader.setBool("flipTexY", (t ==2) ? false : true);
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, wallTex);
+                    shader.setVec3("baseColor", glm::vec3(1.0f));
 
- model = glm::mat4(1.0f);
- model = glm::translate(model, glm::vec3(w.x,0.0f, w.z - TILE *0.5f));
- model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT,1.0f));
- shader.setMat4("model", model);
- glDrawArrays(GL_TRIANGLES,0,6);
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, glm::vec3(w.x,0.0f, w.z - TILE *0.5f));
+                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT,1.0f));
+                    shader.setMat4("model", model);
+                    glDrawArrays(GL_TRIANGLES,0,6);
 
- shader.setBool("useTexture", false);
- }
+                    shader.setBool("useTexture", false);
+                }
 
- // Oeste (c-1)
- if (!InBounds(r, c -1) || IsWall(r, c -1)) {
- int t = InBounds(r, c -1) ? WallType(r, c -1) :0;
- unsigned int wallTex = (t ==2) ? wallHallTex : wallRoomTex;
+                // Oeste (c-1)
+                if (!InBounds(r, c -1) || IsWall(r, c -1)) {
+                    int nr = r;
+                    int nc = c -1;
+                    int t = InBounds(nr, nc) ? WallType(nr, nc) :0;
+                    unsigned int wallTex;
+                    if (t ==2) wallTex = wallRoomTex;
+                    else {
+                        int idx = ((nc %6) +6) %6;
+                        wallTex = wallHallTex[idx];
+                    }
 
- shader.setBool("useTexture", true);
- shader.setBool("useWorldUV", false);
- shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
- shader.setBool("flipTexY", false);
- glActiveTexture(GL_TEXTURE0);
- glBindTexture(GL_TEXTURE_2D, wallTex);
- shader.setVec3("baseColor", glm::vec3(1.0f));
+                    shader.setBool("useTexture", true);
+                    shader.setBool("useWorldUV", false);
+                    shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
+                    shader.setBool("flipTexY", (t ==2) ? false : true);
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, wallTex);
+                    shader.setVec3("baseColor", glm::vec3(1.0f));
 
- model = glm::mat4(1.0f);
- model = glm::translate(model, glm::vec3(w.x - TILE *0.5f,0.0f, w.z));
- model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0,1,0));
- model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT,1.0f));
- shader.setMat4("model", model);
- glDrawArrays(GL_TRIANGLES,0,6);
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, glm::vec3(w.x - TILE *0.5f,0.0f, w.z));
+                    model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0,1,0));
+                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT,1.0f));
+                    shader.setMat4("model", model);
+                    glDrawArrays(GL_TRIANGLES,0,6);
 
- shader.setBool("useTexture", false);
- }
+                    shader.setBool("useTexture", false);
+                }
 
- // Este (c+1)
- if (!InBounds(r, c +1) || IsWall(r, c +1)) {
- int t = InBounds(r, c +1) ? WallType(r, c +1) :0;
- unsigned int wallTex = (t ==2) ? wallHallTex : wallRoomTex;
+                // Este (c+1)
+                if (!InBounds(r, c +1) || IsWall(r, c +1)) {
+                    int nr = r;
+                    int nc = c +1;
+                    int t = InBounds(nr, nc) ? WallType(nr, nc) :0;
+                    unsigned int wallTex;
+                    if (t ==2) wallTex = wallRoomTex;
+                    else {
+                        int idx = ((nc %6) +6) %6;
+                        wallTex = wallHallTex[idx];
+                    }
 
- shader.setBool("useTexture", true);
- shader.setBool("useWorldUV", false);
- shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
- shader.setBool("flipTexY", false);
- glActiveTexture(GL_TEXTURE0);
- glBindTexture(GL_TEXTURE_2D, wallTex);
- shader.setVec3("baseColor", glm::vec3(1.0f));
+                    shader.setBool("useTexture", true);
+                    shader.setBool("useWorldUV", false);
+                    shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
+                    shader.setBool("flipTexY", (t ==2) ? false : true);
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, wallTex);
+                    shader.setVec3("baseColor", glm::vec3(1.0f));
 
- model = glm::mat4(1.0f);
- model = glm::translate(model, glm::vec3(w.x + TILE *0.5f,0.0f, w.z));
- model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0,1,0));
- model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT,1.0f));
- shader.setMat4("model", model);
- glDrawArrays(GL_TRIANGLES,0,6);
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, glm::vec3(w.x + TILE *0.5f,0.0f, w.z));
+                    model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0,1,0));
+                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT,1.0f));
+                    shader.setMat4("model", model);
+                    glDrawArrays(GL_TRIANGLES,0,6);
 
- shader.setBool("useTexture", false);
- }
+                    shader.setBool("useTexture", false);
+                }
 
- }
-}
+            }
+        }
 
         // ================= ACTUALIZAR ENEMIGOS (IA) =================
         // Haremos que recalcule el camino frame a frame hacia el centro de la siguiente celda

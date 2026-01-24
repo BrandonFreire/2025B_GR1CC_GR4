@@ -71,11 +71,12 @@ void main()
         float theta = dot(normalize(spotLightDir), lightToFrag);
 
         float epsilon = spotCutOff - spotOuterCutOff;
-        float intensity = clamp((theta - spotOuterCutOff) / epsilon, 0.0, 1.0);
+        float intensity = clamp((theta - spotOuterCutOff) / epsilon,0.0,1.0);
 
         float dist = length(FragPos - spotLightPos);
         // Atenuación más suave para mayor alcance
-        float attenuation = 1.0 / (1.0 + 0.022 * dist + 0.0019 * dist * dist);
+        // increased constants to reduce effective range (darker further away)
+        float attenuation =1.0 / (1.0 +0.044 * dist +0.0038 * dist * dist);
 
         // diffuse from spot: use direction from fragment to light for normal dot
         vec3 fragToLight = normalize(spotLightPos - FragPos);
@@ -83,17 +84,16 @@ void main()
         // Usar el valor absoluto del dot product para iluminar ambos lados de la superficie
         // Esto evita que las paredes se vean negras cuando la normal apunta en dirección opuesta
         float diffSpot = abs(dot(norm, fragToLight));
-        // Añadir un mínimo de iluminación para evitar zonas completamente negras
-        diffSpot = max(diffSpot, 0.15);
+        // Añadir un mínimo de iluminación para evitar zonas completamente negras (reduced)
+        diffSpot = max(diffSpot,0.08);
 
-        // Aumentada la intensidad de la luz difusa
-        vec3 diffuseSpot = diffSpot * vec3(1.0, 0.95, 0.85) * intensity * attenuation * 3.5;
+        // Reduced intensity multiplier for the spot diffuse
+        vec3 diffuseSpot = diffSpot * vec3(1.0,0.95,0.85) * intensity * attenuation *1.4;
 
-        // specular for spot
+        // specular for spot (reduced)
         vec3 reflectSpot = reflect(-fragToLight, norm);
-        float specSpot = pow(max(dot(viewDir, reflectSpot), 0.0), 32.0);
-        // Aumentada la intensidad especular
-        vec3 specularSpot = vec3(1.0, 0.98, 0.9) * specSpot * intensity * attenuation * 2.0;
+        float specSpot = pow(max(dot(viewDir, reflectSpot), 0.0),32.0);
+        vec3 specularSpot = vec3(1.0,0.98,0.9) * specSpot * intensity * attenuation *0.8;
 
         result += diffuseSpot + specularSpot;
     }

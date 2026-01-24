@@ -5,10 +5,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include <learnopengl/shader.h>
+#include <leranopengl/shader.h>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <learnopengl/stb_image.h>
+//#define STB_IMAGE_IMPLEMENTATION
+#include <leranopengl/stb_image.h>
 
 #include <iostream>
 #include <fstream>
@@ -64,6 +64,11 @@ const float LIGHT_CUBE_SCALE = 0.50f;
 // ================= LUZ =================
 glm::vec3 lightPos(0.0f, 6.0f, 0.0f);
 bool linternaEncendida = false;
+
+// ================= MODO VISTA AEREA =================
+bool modoAereo = false;
+float alturaAerea = 50.0f;  // Altura cuando vuelas sobre el laberinto
+float alturaOriginal = 2.0f; // Altura normal del jugador
 
 // ================= CAMARA =================
 class Camera {
@@ -147,21 +152,62 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
+    // Toggle modo aéreo con SPACE (subir)
+    static bool spacePrevState = false;
+    bool spaceState = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+    if (spaceState && !spacePrevState && !modoAereo) {
+        modoAereo = true;
+        camera.Position.y = alturaAerea;
+        // Mirar hacia abajo
+        camera.Pitch = -89.0f;
+        camera.Mouse(0, 0); // Actualizar vectores de cámara
+    }
+    spacePrevState = spaceState;
+
+    // Bajar con LEFT SHIFT
+    static bool shiftPrevState = false;
+    bool shiftState = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+    if (shiftState && !shiftPrevState && modoAereo) {
+        modoAereo = false;
+        camera.Position.y = alturaOriginal;
+        camera.Pitch = 0.0f;
+        camera.Mouse(0, 0); // Actualizar vectores de cámara
+    }
+    shiftPrevState = shiftState;
+
     glm::vec3 move(0.0f);
 
-    // mover en plano XZ (sin volar)
-    glm::vec3 f = glm::normalize(glm::vec3(camera.Front.x, 0.0f, camera.Front.z));
-    glm::vec3 r = glm::normalize(glm::vec3(camera.Right.x, 0.0f, camera.Right.z));
+    if (modoAereo) {
+        // Movimiento libre en modo aéreo (sin colisiones)
+        float v = camera.Speed * 3.0f * deltaTime; // Más rápido en el aire
 
-    float v = camera.Speed * deltaTime;
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) move += f * v;
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) move -= f * v;
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) move -= r * v;
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) move += r * v;
+        // Movimiento horizontal basado en la orientación
+        glm::vec3 forward = glm::normalize(glm::vec3(camera.Front.x, 0.0f, camera.Front.z));
+        glm::vec3 right = glm::normalize(glm::vec3(camera.Right.x, 0.0f, camera.Right.z));
 
-    if (move.x != 0.0f || move.z != 0.0f)
-        MoveWithCollision(move);
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) camera.Position += forward * v;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) camera.Position -= forward * v;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) camera.Position -= right * v;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) camera.Position += right * v;
 
+        // Subir/bajar con Q/E en modo aéreo
+        if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) camera.Position.y -= v;
+        if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) camera.Position.y += v;
+    }
+    else {
+        // Movimiento normal con colisiones
+        glm::vec3 f = glm::normalize(glm::vec3(camera.Front.x, 0.0f, camera.Front.z));
+        glm::vec3 r = glm::normalize(glm::vec3(camera.Right.x, 0.0f, camera.Right.z));
+
+        float v = camera.Speed * deltaTime;
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) move += f * v;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) move -= f * v;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) move -= r * v;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) move += r * v;
+
+        if (move.x != 0.0f || move.z != 0.0f)
+            MoveWithCollision(move);
+    }
 
     // Linterna L
     static bool lPrevState = false;
@@ -266,9 +312,9 @@ static inline bool WalkableCell(int r, int c) {
 // Revisa colisión con 4 puntos del radio (circle approx)
 // ==== COLISIONES (PLAYER CIRCLE vs WALL TILES) ====
 // sube/baja (con TILE=0.50, 0.12–0.18)
-const float PLAYER_RADIUS = 0.22f;  
+const float PLAYER_RADIUS = 0.22f;
 // margen para NO pegarse (evita que la cámara "asome")
-const float PLAYER_SKIN = 0.03f;  
+const float PLAYER_SKIN = 0.03f;
 
 static inline void TileAABB(int r, int c, float& xMin, float& xMax, float& zMin, float& zMax) {
     float halfW = (MAP_W * TILE) * 0.5f;
@@ -551,13 +597,22 @@ static void CheckCollectibles(const glm::vec3& playerPos, GLFWwindow* window) {
 // ================= TEXTURAS =================
 // simple texture loader (usable for start screen and map textures)
 static unsigned int loadTexture(const char* path) {
- unsigned int id;
- glGenTextures(1, &id);
+    unsigned int id;
+    glGenTextures(1, &id);
 
- int w, h, c;
- stbi_set_flip_vertically_on_load(true);
- unsigned char* data = stbi_load(path, &w, &h, &c,0);
- if (data) {
+    int w, h, c;
+    stbi_set_flip_vertically_on_load(true);
+    unsigned char* data = stbi_load(path, &w, &h, &c, 0);
+    if (!data) {
+        // Retry without ../
+        std::string sPath = path;
+        if (sPath.size() > 3 && sPath.substr(0, 3) == "../") {
+            std::string fallback = sPath.substr(3);
+            data = stbi_load(fallback.c_str(), &w, &h, &c, 0);
+        }
+    }
+
+    if (data) {
  GLenum format = GL_RGB;
  if (c ==1) format = GL_RED;
  else if (c ==3) format = GL_RGB;
@@ -583,7 +638,7 @@ static unsigned int loadTexture(const char* path) {
 int main() {
     // 1) Cargar mapa ANTES de crear OpenGL (así si falla, no pierdes tiempo)
     // Ruta recomendada: el archivo junto al .exe (o junto al proyecto ejecutando desde VS)
-    if (!LoadMapFromTxt("maze.txt")) {
+    if (!LoadMapFromTxt("../maze.txt")) {
         std::cerr << "ERROR: No se pudo cargar maze.txt\n";
         return -1;
     }
@@ -607,10 +662,14 @@ int main() {
     glEnable(GL_DEPTH_TEST);
 
     Shader shader("shaders/B2T3.vs", "shaders/B2T3.fs");
+    if (shader.ID == 0) shader = Shader("shaders/B2T3.vs", "shaders/B2T3.fs");
+    
     Shader lightShader("shaders/light_cube.vs", "shaders/light_cube.fs");
+    if (lightShader.ID == 0) lightShader = Shader("shaders/light_cube.vs", "shaders/light_cube.fs");
 
     // --- Pantalla de inicio ---
     Shader screenShader("shaders/screen.vs", "shaders/screen.fs");
+    if (screenShader.ID == 0) screenShader = Shader("shaders/screen.vs", "shaders/screen.fs");
     float screenQuad[] = {
         // positions // texcoords
         -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,

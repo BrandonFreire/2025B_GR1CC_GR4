@@ -1,4 +1,4 @@
-﻿// ===================== LABERINTO DESDE TXT - SIN TEXTURAS =====================
+// ===================== LABERINTO DESDE TXT - SIN TEXTURAS =====================
 // Lee un archivo maze.txt (0 = vacío, 1 = suelo, E = salida)
 // Requiere B2T3.fs con uniform vec3 baseColor (sin samplear texture1).
 
@@ -9,15 +9,15 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include <learnopengl/shader.h>
+#include "shader.h"
 
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <string>
 
-#include <queue>      
-#include <algorithm>   
+#include <queue>
+#include <algorithm>
 
 // Estructura simple para coordenadas de grid
 struct Point { int r, c; };
@@ -31,6 +31,17 @@ struct Enemy {
 
 // Variables globales para los enemigos
 Enemy enemy1, enemy2;
+
+// ================= CUBOS COLECCIONABLES =================
+struct Collectible {
+    glm::vec3 pos;      // Posición en el mundo
+    bool collected;     // Si ya fue recogido
+    int r, c;           // Celda del grid
+};
+
+std::vector<Collectible> collectibles;
+int collectedCount = 0;
+const int TOTAL_COLLECTIBLES = 5;
 
 // ================= CONFIG =================
 // prototipos colisión (para que processInput los vea)
@@ -148,9 +159,20 @@ void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) move -= r * v;
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) move += r * v;
 
-    if (move.x != 0.0f || move.z != 0.0f)
-        MoveWithCollision(move);
+    if (move.x != 0.0f || move.z != 0.0f) {
+        // Si estamos por encima de las paredes, movimiento libre sin colisiones
+        if (camera.Position.y > WALL_HEIGHT + 0.5f) {
+            camera.Position += move;
+        } else {
+            MoveWithCollision(move);
+        }
+    }
 
+    // Volar: SPACE sube, SHIFT baja (sin colisión vertical)
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+        camera.Position.y += camera.Speed * deltaTime;
+    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+        camera.Position.y -= camera.Speed * deltaTime;
 
     // Linterna L
     static bool lPrevState = false;
@@ -459,12 +481,94 @@ static void SpawnEnemies(glm::vec3 playerPos) {
     std::cout << "Enemigos spawneados: " << spawnedCount << "\n";
 }
 
+// ================= SPAWN CUBOS COLECCIONABLES =================
+static void SpawnCollectibles(glm::vec3 playerPos) {
+    collectibles.clear();
+    collectedCount = 0;
+
+    Point pCell = WorldToCell(playerPos);
+
+    // Dividir el mapa en 5 zonas y colocar un cubo en cada zona
+    int zonesR = 5;  // Dividir en 5 filas de zonas
+    int zoneHeight = MAP_H / zonesR;
+
+    for (int zone = 0; zone < TOTAL_COLLECTIBLES; zone++) {
+        int zoneStartR = zone * zoneHeight;
+        int zoneEndR = (zone == zonesR - 1) ? MAP_H : (zone + 1) * zoneHeight;
+
+        // Buscar una celda de suelo válida en esta zona
+        bool found = false;
+        for (int attempts = 0; attempts < 500 && !found; attempts++) {
+            int r = zoneStartR + rand() % (zoneEndR - zoneStartR);
+            int c = rand() % MAP_W;
+
+            if (IsFloor(r, c)) {
+                // Verificar que no esté muy cerca del jugador
+                float dPlayer = glm::distance(glm::vec2(r, c), glm::vec2(pCell.r, pCell.c));
+                if (dPlayer > 3) {
+                    // Verificar que no esté muy cerca de otro coleccionable
+                    bool tooClose = false;
+                    for (const auto& col : collectibles) {
+                        float d = glm::distance(glm::vec2(r, c), glm::vec2(col.r, col.c));
+                        if (d < 5) { tooClose = true; break; }
+                    }
+
+                    if (!tooClose) {
+                        Collectible newCol;
+                        newCol.r = r;
+                        newCol.c = c;
+                        newCol.pos = CellToWorld(r, c);
+                        newCol.pos.y = 1.5f;  // Flotando a media altura
+                        newCol.collected = false;
+                        collectibles.push_back(newCol);
+                        found = true;
+                    }
+                }
+            }
+        }
+    }
+
+    std::cout << "Cubos coleccionables spawneados: " << collectibles.size() << " de " << TOTAL_COLLECTIBLES << "\n";
+}
+
+// ================= VERIFICAR RECOLECCIÓN DE CUBOS =================
+static void CheckCollectibles(glm::vec3 playerPos, GLFWwindow* window) {
+    const float COLLECT_RADIUS = 0.8f;  // Radio para recoger el cubo
+
+    for (auto& col : collectibles) {
+        if (col.collected) continue;
+
+        // Distancia en XZ (ignoramos Y para facilitar recolección)
+        float dx = playerPos.x - col.pos.x;
+        float dz = playerPos.z - col.pos.z;
+        float dist = sqrt(dx * dx + dz * dz);
+
+        if (dist < COLLECT_RADIUS) {
+            col.collected = true;
+            collectedCount++;
+
+            // Actualizar título de la ventana
+            std::string title;
+            if (collectedCount < TOTAL_COLLECTIBLES) {
+                title = "LABERINTO - Cubos recogidos: " + std::to_string(collectedCount) + " de " + std::to_string(TOTAL_COLLECTIBLES);
+                std::cout << "=== CUBO RECOGIDO! " << collectedCount << " de " << TOTAL_COLLECTIBLES << " cubos ===\n";
+            } else {
+                title = "LABERINTO - HAS RECOGIDO TODOS LOS CUBOS!!!";
+                std::cout << "==============================================\n";
+                std::cout << "   HAS RECOGIDO TODOS LOS CUBOS!!!   \n";
+                std::cout << "==============================================\n";
+            }
+            glfwSetWindowTitle(window, title.c_str());
+        }
+    }
+}
+
 
 // ================= MAIN =================
 int main() {
     // 1) Cargar mapa ANTES de crear OpenGL (así si falla, no pierdes tiempo)
     // Ruta recomendada: el archivo junto al .exe (o junto al proyecto ejecutando desde VS)
-    if (!LoadMapFromTxt("maze.txt")) {
+    if (!LoadMapFromTxt("../maze.txt")) {
         std::cerr << "ERROR: No se pudo cargar maze.txt\n";
         return -1;
     }
@@ -474,7 +578,7 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LABERINTO (TXT) - Sin Texturas", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LABERINTO - Cubos recogidos: 0 de 5", nullptr, nullptr);
     glfwMakeContextCurrent(window);
 
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
@@ -487,8 +591,8 @@ int main() {
     }
     glEnable(GL_DEPTH_TEST);
 
-    Shader shader("shaders/B2T3.vs", "shaders/B2T3.fs");
-    Shader lightShader("shaders/light_cube.vs", "shaders/light_cube.fs");
+    Shader shader("../shaders/B2T3.vs", "../shaders/B2T3.fs");
+    Shader lightShader("../shaders/light_cube.vs", "../shaders/light_cube.fs");
 
     // ===== GEOMETRIA BASE =====
     float planeVertices[] = {
@@ -594,6 +698,7 @@ int main() {
     // === NUEVO: INICIALIZAR ENEMIGOS ===
     srand((unsigned int)glfwGetTime()); // Semilla random
     SpawnEnemies(camera.Position);
+    SpawnCollectibles(camera.Position);  // Spawnear cubos coleccionables
 
     // ================= LOOP =================
     while (!glfwWindowShouldClose(window)) {
@@ -602,6 +707,7 @@ int main() {
         lastFrame = time;
 
         processInput(window);
+        CheckCollectibles(camera.Position, window);  // Verificar si recogemos algún cubo
 
         glClearColor(0.08f, 0.08f, 0.08f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -616,6 +722,11 @@ int main() {
         shader.setVec3("viewPos", camera.Position);
 
         shader.setInt("linterna", linternaEncendida);
+
+        // Iluminación exterior: si estamos por encima de las paredes, todo se ilumina
+        bool fueraDelLaberinto = camera.Position.y > WALL_HEIGHT + 0.5f;
+        shader.setInt("iluminacionExterior", fueraDelLaberinto);
+
         if (linternaEncendida) {
             shader.setVec3("spotLightPos", camera.Position);
             shader.setVec3("spotLightDir", camera.Front);
@@ -648,16 +759,14 @@ int main() {
                 shader.setVec3("baseColor", glm::vec3(0.78f, 0.65f, 0.20f));
                 glDrawArrays(GL_TRIANGLES, 0, 6);
 
-                // ----- Techo -----
-                glBindVertexArray(floorVAO);
-                glm::mat4 roof = glm::mat4(1.0f);
-                roof = glm::translate(roof, glm::vec3(w.x, WALL_HEIGHT, w.z));
-                roof = glm::scale(roof, glm::vec3(TILE, 1.0f, TILE));
-                shader.setMat4("model", roof);
-
-                // color del techo (gris)
-                shader.setVec3("baseColor", 0.25f, 0.25f, 0.25f);
-                glDrawArrays(GL_TRIANGLES, 0, 6);
+                // ----- Techo (deshabilitado para ver desde arriba) -----
+                // glBindVertexArray(floorVAO);
+                // glm::mat4 roof = glm::mat4(1.0f);
+                // roof = glm::translate(roof, glm::vec3(w.x, WALL_HEIGHT, w.z));
+                // roof = glm::scale(roof, glm::vec3(TILE, 1.0f, TILE));
+                // shader.setMat4("model", roof);
+                // shader.setVec3("baseColor", 0.25f, 0.25f, 0.25f);
+                // glDrawArrays(GL_TRIANGLES, 0, 6);
 
 
                 // ----- Paredes (bordes) -----
@@ -772,6 +881,34 @@ int main() {
             model = glm::translate(model, e->pos);
             // Hacemos el enemigo un poco más pequeño que el Tile para que no atraviese paredes visualmente
             model = glm::scale(model, glm::vec3(0.4f));
+            shader.setMat4("model", model);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+
+        // ================= DIBUJAR CUBOS COLECCIONABLES =================
+        shader.use();
+        shader.setVec3("baseColor", glm::vec3(1.0f, 0.84f, 0.0f));  // Color dorado
+
+        for (const auto& col : collectibles) {
+            if (col.collected) continue;  // No dibujar si ya fue recogido
+
+            glBindVertexArray(cubeVAO);
+            glm::mat4 model = glm::mat4(1.0f);
+
+            // Posición con efecto de flotación
+            float floatOffset = sin(time * 2.0f) * 0.3f;  // Sube y baja
+            glm::vec3 drawPos = col.pos;
+            drawPos.y += floatOffset;
+
+            model = glm::translate(model, drawPos);
+
+            // Rotación continua
+            model = glm::rotate(model, time * 1.5f, glm::vec3(0.0f, 1.0f, 0.0f));
+            model = glm::rotate(model, time * 0.5f, glm::vec3(1.0f, 0.0f, 0.0f));
+
+            // Tamaño del cubo coleccionable
+            model = glm::scale(model, glm::vec3(0.35f));
+
             shader.setMat4("model", model);
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }

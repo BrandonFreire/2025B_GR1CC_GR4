@@ -10,6 +10,10 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <learnopengl/shader.h>
+//#include <learnopengl/model.h>
+#include <learnopengl/model_animation.h>   
+#include <learnopengl/animation.h>          
+#include <learnopengl/animator.h>  
 
 #include <iostream>
 #include <fstream>
@@ -19,6 +23,9 @@
 #include <queue>      
 #include <algorithm>   
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <learnopengl/stb_image.h>
+
 // Estructura simple para coordenadas de grid
 struct Point { int r, c; };
 
@@ -27,6 +34,12 @@ struct Enemy {
     glm::vec3 pos;      // Posición suave (interpolada) en el mundo
     int r, c;           // Posición lógica actual en el grid
     float speed = 2.5f; // Velocidad de movimiento
+
+    // Variables para animación
+    float animTime = 0.0f;     // Tiempo actual de la animación
+    float rotation = 0.0f;     // Rotación hacia donde mira el enemigo  <-- ESTE CAMPO
+    glm::vec3 lastPos;         // Posición anterior
+    bool isMoving = false;     // Si está en movimiento
 };
 
 // Variables globales para los enemigos
@@ -595,6 +608,21 @@ int main() {
     srand((unsigned int)glfwGetTime()); // Semilla random
     SpawnEnemies(camera.Position);
 
+    // USAR UN SHADER ESTÁNDAR PARA MODELOS 3D
+    // (Asegúrate de tener "model_loading.vs" y "model_loading.fs" en tu carpeta shaders,
+    //  son los shaders por defecto de LearnOpenGL para modelos).
+    Shader alienShader("shaders/model_loading.vs", "shaders/model_loading.fs");
+
+    // CARGAR EL MODELO DEL ALIEN
+    // La ruta debe coincidir con tu carpeta: model -> alien -> scene.gltf
+    Model alienModel("model/alien/Alien.gltf");
+
+    // CARGAR LA ANIMACIÓN (usa el mismo archivo GLTF)
+    Animation alienAnimation("model/alien/Alien.gltf", &alienModel);
+
+    // CREAR EL ANIMATOR
+    Animator animator(&alienAnimation);
+
     // ================= LOOP =================
     while (!glfwWindowShouldClose(window)) {
         float time = (float)glfwGetTime();
@@ -750,6 +778,19 @@ int main() {
             if (glm::length(dir) > 0.01f) {
                 dir = glm::normalize(dir);
                 e->pos += dir * e->speed * deltaTime;
+                e->isMoving = true;
+
+                // Actualizar tiempo de animación
+                e->animTime += deltaTime * 5.0f;
+                if (e->animTime > 6.28318f) e->animTime -= 6.28318f;
+            }
+
+            // SIEMPRE calcular la rotación hacia el jugador (no hacia donde se mueve)
+            glm::vec3 dirToPlayer = camera.Position - e->pos;
+            dirToPlayer.y = 0.0f;  // Ignorar diferencia de altura
+            if (glm::length(dirToPlayer) > 0.01f) {
+                dirToPlayer = glm::normalize(dirToPlayer);
+                e->rotation = atan2(dirToPlayer.x, dirToPlayer.z);
             }
 
             // 4. Si está muy cerca del centro de la casilla objetivo, actualizar su grid lógico
@@ -760,20 +801,41 @@ int main() {
         }
 
         // ================= DIBUJAR ENEMIGOS =================
-        // Usamos el shader principal (tiene luz y sombras)
-        shader.use();
+        animator.UpdateAnimation(deltaTime);
 
-        // Color rojo amenazante para los enemigos
-        shader.setVec3("baseColor", glm::vec3(0.8f, 0.0f, 0.0f));
+        alienShader.use();
+
+        // Matrices básicas
+        alienShader.setMat4("projection", projection);
+        alienShader.setMat4("view", view);
+
+        // Configuración de Luz
+        alienShader.setVec3("lightPos", lightPos);
+        alienShader.setVec3("viewPos", camera.Position);
+
+        // Pasar las matrices de huesos al shader
+        alienShader.setBool("useAnimation", true);
+        auto transforms = animator.GetFinalBoneMatrices();
+        for (int i = 0; i < transforms.size(); ++i) {
+            alienShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", transforms[i]);
+        }
 
         for (Enemy* e : enemies) {
-            glBindVertexArray(cubeVAO); // Reusamos el cubo de la luz
             glm::mat4 model = glm::mat4(1.0f);
-            model = glm::translate(model, e->pos);
-            // Hacemos el enemigo un poco más pequeño que el Tile para que no atraviese paredes visualmente
+
+            // Posición del enemigo
+            glm::vec3 alturaAjustada = e->pos + glm::vec3(0.0f, 0.0f, 0.0f);
+            model = glm::translate(model, alturaAjustada);
+
+            // Rotar hacia la dirección de movimiento (necesitas agregar e->rotation)
+            model = glm::rotate(model, e->rotation, glm::vec3(0.0f, 1.0f, 0.0f));
+            //model = glm::rotate(model, (float)e->rotation + glm::pi<float>(), glm::vec3(0.0f, 1.0f, 0.0f));
+
+            // Escalar
             model = glm::scale(model, glm::vec3(0.4f));
-            shader.setMat4("model", model);
-            glDrawArrays(GL_TRIANGLES, 0, 36);
+
+            alienShader.setMat4("model", model);
+            alienModel.Draw(alienShader);
         }
 
         // ===== CUBO LUZ =====

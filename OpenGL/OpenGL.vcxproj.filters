@@ -19,6 +19,12 @@
     <Filter Include="Archivos de origen\textures">
       <UniqueIdentifier>{ff7e3935-fdbd-4f78-ab88-04ae7e231d97}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Archivos de origen\model">
+      <UniqueIdentifier>{15185cd1-09db-4104-9d1a-9d6b6e279757}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Archivos de origen\model\alien">
+      <UniqueIdentifier>{65c89125-eb25-426d-a61f-cbf3bb84f38a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="D:\glad\src\glad.c">
@@ -40,6 +46,18 @@
     </None>
     <None Include="shaders\light_cube.fs">
       <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="model\alien\scene.bin">
+      <Filter>Archivos de origen\model\alien</Filter>
+    </None>
+    <None Include="shaders\model_loading.vs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\model_loading.fs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="model\alien\scene.gltf">
+      <Filter>Archivos de origen\model\alien</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -85,10 +103,41 @@
     <Image Include="textures\TextruaP2.png">
       <Filter>Archivos de origen\textures</Filter>
     </Image>
+    <Image Include="model\alien\alien_u0v0_baseColor.png">
+      <Filter>Archivos de origen\model\alien</Filter>
+    </Image>
+    <Image Include="model\alien\alien_u0v0_metallicRoughness.png">
+      <Filter>Archivos de origen\model\alien</Filter>
+    </Image>
+    <Image Include="model\alien\alien_u0v0_normal.png">
+      <Filter>Archivos de origen\model\alien</Filter>
+    </Image>
+    <Image Include="model\alien\alien_u0v1_baseColor.png">
+      <Filter>Archivos de origen\model\alien</Filter>
+    </Image>
+    <Image Include="model\alien\alien_u0v1_metallicRoughness.png">
+      <Filter>Archivos de origen\model\alien</Filter>
+    </Image>
+    <Image Include="model\alien\alien_u0v1_normal.png">
+      <Filter>Archivos de origen\model\alien</Filter>
+    </Image>
+    <Image Include="model\alien\alien_u0v2_baseColor.png">
+      <Filter>Archivos de origen\model\alien</Filter>
+    </Image>
+    <Image Include="model\alien\alien_u0v2_metallicRoughness.png">
+      <Filter>Archivos de origen\model\alien</Filter>
+    </Image>
+    <Image Include="model\alien\alien_u0v2_normal.png">
+      <Filter>Archivos de origen\model\alien</Filter>
+    </Image>
+    <Image Include="model\alien\alien_u0v2_transmission.png">
+      <Filter>Archivos de origen\model\alien</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Text Include="textures\notas.txt.txt">
       <Filter>Archivos de origen\textures</Filter>
     </Text>
+    <Text Include="D:\Descargas U\maze.txt" />
   </ItemGroup>
 </Project>

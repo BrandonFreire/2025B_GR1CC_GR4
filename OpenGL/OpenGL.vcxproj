@@ -110,7 +110,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(SolutionDir)OpenGL_Stuff\Library;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>opengl32.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opengl32.lib;glfw3.lib;assimp-vc143-mtd.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -132,12 +132,26 @@
     <ClCompile Include="Proyectopruebatexture.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="model\alien\scene.bin" />
+    <None Include="model\alien\scene.gltf" />
     <None Include="shaders\B2T3.fs" />
     <None Include="shaders\B2T3.vs" />
     <None Include="shaders\light_cube.fs" />
     <None Include="shaders\light_cube.vs" />
+    <None Include="shaders\model_loading.fs" />
+    <None Include="shaders\model_loading.vs" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="model\alien\alien_u0v0_baseColor.png" />
+    <Image Include="model\alien\alien_u0v0_metallicRoughness.png" />
+    <Image Include="model\alien\alien_u0v0_normal.png" />
+    <Image Include="model\alien\alien_u0v1_baseColor.png" />
+    <Image Include="model\alien\alien_u0v1_metallicRoughness.png" />
+    <Image Include="model\alien\alien_u0v1_normal.png" />
+    <Image Include="model\alien\alien_u0v2_baseColor.png" />
+    <Image Include="model\alien\alien_u0v2_metallicRoughness.png" />
+    <Image Include="model\alien\alien_u0v2_normal.png" />
+    <Image Include="model\alien\alien_u0v2_transmission.png" />
     <Image Include="textures\Finalpa1.png" />
     <Image Include="textures\Finalpa2.png" />
     <Image Include="textures\gradas1.png" />

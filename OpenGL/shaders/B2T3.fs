@@ -71,20 +71,29 @@ void main()
         float theta = dot(normalize(spotLightDir), lightToFrag);
 
         float epsilon = spotCutOff - spotOuterCutOff;
-        float intensity = clamp((theta - spotOuterCutOff) / epsilon,0.0,1.0);
+        float intensity = clamp((theta - spotOuterCutOff) / epsilon, 0.0, 1.0);
 
         float dist = length(FragPos - spotLightPos);
-        float attenuation =1.0 / (1.0 +0.09 * dist +0.032 * dist * dist);
+        // Atenuación más suave para mayor alcance
+        float attenuation = 1.0 / (1.0 + 0.022 * dist + 0.0019 * dist * dist);
 
         // diffuse from spot: use direction from fragment to light for normal dot
         vec3 fragToLight = normalize(spotLightPos - FragPos);
-        float diffSpot = max(dot(norm, fragToLight),0.0);
-        vec3 diffuseSpot = diffSpot * vec3(0.85,0.85,1.0) * intensity * attenuation *1.6;
+
+        // Usar el valor absoluto del dot product para iluminar ambos lados de la superficie
+        // Esto evita que las paredes se vean negras cuando la normal apunta en dirección opuesta
+        float diffSpot = abs(dot(norm, fragToLight));
+        // Añadir un mínimo de iluminación para evitar zonas completamente negras
+        diffSpot = max(diffSpot, 0.15);
+
+        // Aumentada la intensidad de la luz difusa
+        vec3 diffuseSpot = diffSpot * vec3(1.0, 0.95, 0.85) * intensity * attenuation * 3.5;
 
         // specular for spot
         vec3 reflectSpot = reflect(-fragToLight, norm);
-        float specSpot = pow(max(dot(viewDir, reflectSpot),0.0),64.0);
-        vec3 specularSpot = vec3(0.95,0.95,1.0) * specSpot * intensity * attenuation *1.1;
+        float specSpot = pow(max(dot(viewDir, reflectSpot), 0.0), 32.0);
+        // Aumentada la intensidad especular
+        vec3 specularSpot = vec3(1.0, 0.98, 0.9) * specSpot * intensity * attenuation * 2.0;
 
         result += diffuseSpot + specularSpot;
     }

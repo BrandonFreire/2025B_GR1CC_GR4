@@ -568,7 +568,7 @@ static void CheckCollectibles(glm::vec3 playerPos, GLFWwindow* window) {
 int main() {
     // 1) Cargar mapa ANTES de crear OpenGL (así si falla, no pierdes tiempo)
     // Ruta recomendada: el archivo junto al .exe (o junto al proyecto ejecutando desde VS)
-    if (!LoadMapFromTxt("../maze.txt")) {
+    if (!LoadMapFromTxt("maze.txt")) {
         std::cerr << "ERROR: No se pudo cargar maze.txt\n";
         return -1;
     }
@@ -591,8 +591,8 @@ int main() {
     }
     glEnable(GL_DEPTH_TEST);
 
-    Shader shader("../shaders/B2T3.vs", "../shaders/B2T3.fs");
-    Shader lightShader("../shaders/light_cube.vs", "../shaders/light_cube.fs");
+    Shader shader("shaders/B2T3.vs", "shaders/B2T3.fs");
+    Shader lightShader("shaders/light_cube.vs", "shaders/light_cube.fs");
 
     // ===== GEOMETRIA BASE =====
     float planeVertices[] = {

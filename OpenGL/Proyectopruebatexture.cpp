@@ -5,10 +5,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "shader.h"
+#include <learnopengl/shader.h>
 
-//#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include <learnopengl/stb_image.h>
 
 #include <iostream>
 #include <fstream>
@@ -30,10 +30,6 @@ struct Enemy {
 
 // Variables globales para los enemigos
 Enemy enemy1, enemy2;
-
-// Variables para movimiento aleatorio de enemy1
-Point enemy1RandomTarget = {0, 0};  // Objetivo aleatorio actual
-bool enemy1HasTarget = false;       // Si tiene un objetivo válido
 
 // ================= CUBOS COLECCIONABLES =================
 struct Collectible {
@@ -69,25 +65,10 @@ const float LIGHT_CUBE_SCALE = 0.50f;
 glm::vec3 lightPos(0.0f, 6.0f, 0.0f);
 bool linternaEncendida = false;
 
-// ================= INTERMITENCIA LINTERNA (enemigo cerca) =================
-float linternaFlickerTimer = 0.0f;      // Temporizador para el parpadeo
-int linternaFlickerCount = 0;           // Contador de parpadeos restantes
-bool linternaFlickerState = true;       // Estado actual del parpadeo (encendida/apagada)
-const float FLICKER_SPEED = 0.1f;       // Velocidad de cada parpadeo (segundos)
-const float ENEMY_CAUGHT_DIST = 1.5f;   // Distancia "alcanzado" (sin parpadeo, luz fija)
-const float ENEMY_CLOSE_DIST = 3.0f;    // Distancia "muy cerca" (3 parpadeos)
-const float ENEMY_APPROACH_DIST = 6.0f; // Distancia "acercándose" (2 parpadeos)
-
 // ================= MODO VISTA AEREA =================
 bool modoAereo = false;
 float alturaAerea = 50.0f;  // Altura cuando vuelas sobre el laberinto
 float alturaOriginal = 2.0f; // Altura normal del jugador
-
-// ================= MINIMAPA =================
-const int MINIMAP_RADIUS = 8;       // Radio de celdas visibles alrededor del jugador
-const float MINIMAP_SIZE = 200.0f;  // Tamaño del minimapa en pixeles
-const float MINIMAP_MARGIN = 20.0f; // Margen desde la esquina
-const float MINIMAP_CELL_SIZE = MINIMAP_SIZE / (MINIMAP_RADIUS * 2 + 1); // Tamaño de cada celda
 
 // ================= CAMARA =================
 class Camera {
@@ -384,7 +365,6 @@ static inline bool CollidesAt(float x, float z) {
 }
 
 
-// Movimiento con colisión y "slide": intenta X y Z por separado
 static inline void MoveWithCollision(const glm::vec3& deltaXZ) {
     glm::vec3 pos = camera.Position;
 
@@ -501,19 +481,6 @@ static Point GetNextStepBFS(int startR, int startC, int targetR, int targetC) {
     }
 }
 
-// Función para obtener un objetivo aleatorio válido en el laberinto
-static Point GetRandomFloorCell() {
-    for (int i = 0; i < 100; i++) {
-        int r = rand() % MAP_H;
-        int c = rand() % MAP_W;
-        if (IsFloor(r, c)) {
-            return {r, c};
-        }
-    }
-    // Si no encuentra, devolver posición actual del enemy1
-    return {enemy1.r, enemy1.c};
-}
-
 static void SpawnEnemies(glm::vec3 playerPos) {
     Point pCell = WorldToCell(playerPos);
     int spawnedCount = 0;
@@ -626,15 +593,14 @@ static void CheckCollectibles(const glm::vec3& playerPos, GLFWwindow* window) {
     }
 }
 
-
 // ================= TEXTURAS =================
 // simple texture loader (usable for start screen and map textures)
-static unsigned int loadTexture(const char* path) {
+static unsigned int loadTexture(const char* path, bool flip = true) {
     unsigned int id;
     glGenTextures(1, &id);
 
     int w, h, c;
-    stbi_set_flip_vertically_on_load(true);
+    stbi_set_flip_vertically_on_load(flip);
     unsigned char* data = stbi_load(path, &w, &h, &c, 0);
     if (!data) {
         // Retry without ../
@@ -670,7 +636,7 @@ static unsigned int loadTexture(const char* path) {
 // ================= MAIN =================
 
 int main() {
-    if (!LoadMapFromTxt("../maze.txt")) { std::cerr << "ERROR: No se pudo cargar maze.txt\n"; return -1; }
+    if (!LoadMapFromTxt("maze.txt")) { std::cerr << "ERROR: No se pudo cargar maze.txt\n"; return -1; }
 
 
     glfwInit();
@@ -691,38 +657,15 @@ int main() {
     }
     glEnable(GL_DEPTH_TEST);
 
-    Shader shader("../shaders/B2T3.vs", "../shaders/B2T3.fs");
-    if (shader.ID == 0) shader = Shader("../shaders/B2T3.vs", "../shaders/B2T3.fs");
+    Shader shader("shaders/B2T3.vs", "shaders/B2T3.fs");
+    if (shader.ID == 0) shader = Shader("shaders/B2T3.vs", "shaders/B2T3.fs");
 
-    Shader lightShader("../shaders/light_cube.vs", "../shaders/light_cube.fs");
-    if (lightShader.ID == 0) lightShader = Shader("../shaders/light_cube.vs", "../shaders/light_cube.fs");
+    Shader lightShader("shaders/light_cube.vs", "shaders/light_cube.fs");
+    if (lightShader.ID == 0) lightShader = Shader("shaders/light_cube.vs", "shaders/light_cube.fs");
 
     // --- Pantalla de inicio ---
-    Shader screenShader("../shaders/screen.vs", "../shaders/screen.fs");
-    if (screenShader.ID == 0) screenShader = Shader("../shaders/screen.vs", "../shaders/screen.fs");
-
-    // --- Shader del minimapa ---
-    Shader minimapShader("../shaders/minimap.vs", "../shaders/minimap.fs");
-
-    // VAO para el minimapa (un quad simple)
-    float minimapQuad[] = {
-        0.0f, 0.0f,
-        1.0f, 0.0f,
-        1.0f, 1.0f,
-        1.0f, 1.0f,
-        0.0f, 1.0f,
-        0.0f, 0.0f
-    };
-    unsigned int minimapVAO, minimapVBO;
-    glGenVertexArrays(1, &minimapVAO);
-    glGenBuffers(1, &minimapVBO);
-    glBindVertexArray(minimapVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, minimapVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(minimapQuad), minimapQuad, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glBindVertexArray(0);
-
+    Shader screenShader("shaders/screen.vs", "shaders/screen.fs");
+    if (screenShader.ID == 0) screenShader = Shader("shaders/screen.vs", "shaders/screen.fs");
     float screenQuad[] = {
         // positions // texcoords
         -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
@@ -744,77 +687,61 @@ int main() {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
     glBindVertexArray(0);
 
-    unsigned int startTex = loadTexture("../textures/portada.png");
-    unsigned int loadingTex = loadTexture("../textures/Pantalla de carga.jpeg");
+    unsigned int startTex = loadTexture("textures/portada.png");
     screenShader.use();
     screenShader.setInt("screenTex", 0);
-
-    // Variables para pantalla de carga
-    bool loadingComplete = false;
-    bool showingLoading = false;  // Si estamos mostrando la pantalla de carga
-    float loadingTimer = 0.0f;
-    const float LOADING_DURATION = 3.0f; // 3 segundos de pantalla de carga
-
-    // Quad para imagen con proporciones correctas (no estirada)
-    // Asumiendo imagen 16:9 o similar, ajustamos para mantener aspecto
-    float imgAspect = 9.0f / 16.0f; // Aspecto de la imagen (alto/ancho)
-    float scrAspect = (float)SCR_HEIGHT / (float)SCR_WIDTH;
-    float scaleX = 1.0f, scaleY = 1.0f;
-    if (imgAspect > scrAspect) {
-        // Imagen más alta que pantalla, ajustar ancho
-        scaleX = scrAspect / imgAspect;
-    } else {
-        // Imagen más ancha que pantalla, ajustar alto
-        scaleY = imgAspect / scrAspect;
-    }
-
-    float loadingQuad[] = {
-        // positions                    // texcoords
-        -scaleX,  scaleY, 0.0f,         0.0f, 1.0f,
-        -scaleX, -scaleY, 0.0f,         0.0f, 0.0f,
-         scaleX, -scaleY, 0.0f,         1.0f, 0.0f,
-
-        -scaleX,  scaleY, 0.0f,         0.0f, 1.0f,
-         scaleX, -scaleY, 0.0f,         1.0f, 0.0f,
-         scaleX,  scaleY, 0.0f,         1.0f, 1.0f
-    };
-
-    unsigned int loadingVAO, loadingVBO;
-    glGenVertexArrays(1, &loadingVAO);
-    glGenBuffers(1, &loadingVBO);
-    glBindVertexArray(loadingVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, loadingVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(loadingQuad), loadingQuad, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    glBindVertexArray(0);
+    unsigned int wallindie1 = loadTexture("textures/Finalpainsano1.png");
+    unsigned int wallindie2 = loadTexture("textures/Finalpainsano2.png");
 
     // ===== TEXTURAS =====
-    unsigned int floorRoomTex = loadTexture("../textures/TextruaP1.png");
+    unsigned int floorRoomTex = loadTexture("textures/TextruaP1.png");
     // restore: room walls use Pared4, hall walls use multiple pasillo textures
-    unsigned int wallRoomTex = loadTexture("../textures/Pared4.png");
-    unsigned int floorHallTex = loadTexture("../textures/gradas1.png");
+    // load wallRoomTex without vertical flip so it displays upright
+    unsigned int wallRoomTex = loadTexture("textures/Pared4.png", false);
+    unsigned int floorHallTex = loadTexture("textures/gradas1.png");
 
     // load a sequence of pasillo textures (pattern: pasillo1..pasillo6)
     unsigned int wallHallTex[6];
-    wallHallTex[0] = loadTexture("../textures/pasillo1.png");
-    wallHallTex[1] = loadTexture("../textures/pasillo2.png");
-    wallHallTex[2] = loadTexture("../textures/pasillo3.png");
-    wallHallTex[3] = loadTexture("../textures/pasillo4.png");
-    wallHallTex[4] = loadTexture("../textures/pasillo5.png");
-    wallHallTex[5] = loadTexture("../textures/pasillo6.png");
+    wallHallTex[0] = loadTexture("textures/polipa.png");
+    wallHallTex[1] = loadTexture("textures/polipa2.png");
+    wallHallTex[2] = loadTexture("textures/polipa3.png");
+    wallHallTex[3] = loadTexture("textures/polipa4.png");
+    wallHallTex[4] = loadTexture("textures/polipa5.png");
+    wallHallTex[5] = loadTexture("textures/polipa6.png");
 
-    // make the texture that's now used for hall walls clamp so it doesn't repeat when UV outside0..1
-    // NOTE: keep clamp for wallRoomTex as before
-    glBindTexture(GL_TEXTURE_2D, wallRoomTex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    // detecta algunos segmentos de pared estrechos y márcalos para usar la textura indie
+    struct IndieSeg { int startR; int startC; int dir; int len; }; // dir:0=horizontal(segmento a lo largo de las columnas, atado a la fila del suelo),1=vertical(segmento a lo largo de las filas, atado a la columna del suelo)
+    std::vector<IndieSeg> indieSegs;
+    const int MAX_INDIE = 4;
+    const int NARROW_THRESHOLD = 2; // longitud de segmento <= umbral considerado "estrecho"
 
-    unsigned int wallEndTex = loadTexture("../textures/Finalpa2.png"); // pared final
-    unsigned int harrybotTex = loadTexture("../textures/Francisbot.png");
-    // startTex ya cargada arriba para la pantalla
+    for (int rr = 0; rr < MAP_H && (int)indieSegs.size() < MAX_INDIE; rr++) {
+        for (int cc = 0; cc < MAP_W && (int)indieSegs.size() < MAX_INDIE; cc++) {
+            if (!IsFloor(rr, cc)) continue;
+            // pared horizontal sobre esta celda de suelo (facing north)
+            if (!InBounds(rr - 1, cc) || IsWall(rr - 1, cc)) {
+                int startC = cc;
+                while (startC - 1 >= 0 && IsFloor(rr, startC - 1) && (!InBounds(rr - 1, startC - 1) || IsWall(rr - 1, startC - 1))) startC--;
+                int len = 0;
+                int c2 = startC;
+                while (c2 < MAP_W && IsFloor(rr, c2) && (!InBounds(rr - 1, c2) || IsWall(rr - 1, c2))) { len++; c2++; }
+                // only mark segments that are exactly NARROW_THRESHOLD long (pairs)
+                if (len == NARROW_THRESHOLD) indieSegs.push_back({ rr, startC,0, len });
+            }
+            if ((int)indieSegs.size() >= MAX_INDIE) break;
+
+            // pared vertical a la izquierda de esta celda de suelo (facing west)
+            if (!InBounds(rr, cc - 1) || IsWall(rr, cc - 1)) {
+                int startR = rr;
+                while (startR - 1 >= 0 && IsFloor(startR - 1, cc) && (!InBounds(startR - 1, cc - 1) || IsWall(startR - 1, cc - 1))) startR--;
+                int len = 0;
+                int r2 = startR;
+                while (r2 < MAP_H && IsFloor(r2, cc) && (!InBounds(r2, cc - 1) || IsWall(r2, cc - 1))) { len++; r2++; }
+                // only mark segments that are exactly NARROW_THRESHOLD long (pairs)
+                if (len == NARROW_THRESHOLD) indieSegs.push_back({ startR, cc,1, len });
+            }
+        }
+    }
 
     // Asegurar que el shader use la unidad de textura0 para 'texture1'
     shader.use();
@@ -947,19 +874,13 @@ int main() {
         // Poll events first so key state is updated for start screen
         glfwPollEvents();
 
-        // ===== PANTALLA DE INICIO (PORTADA) - Esperar ENTER =====
-        if (!showingLoading && !gameStarted) {
-            // check enter to start loading
-            bool enter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
-            if (enter && !lastEnter) {
-                showingLoading = true;
-                loadingTimer = 0.0f;
-                lastFrame = (float)glfwGetTime();
-            }
-            lastEnter = enter;
+        // check enter to start
+        bool enter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
+        if (enter && !lastEnter) gameStarted = true;
+        lastEnter = enter;
 
-            // render the start screen (portada)
-            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        if (!gameStarted) {
+            // render only the start screen
             glClear(GL_COLOR_BUFFER_BIT);
             screenShader.use();
             glBindVertexArray(screenVAO);
@@ -971,35 +892,6 @@ int main() {
             glEnable(GL_DEPTH_TEST);
 
             glfwSwapBuffers(window);
-            continue;
-        }
-
-        // ===== PANTALLA DE CARGA - Después de presionar ENTER =====
-        if (showingLoading && !loadingComplete) {
-            float currentTime = (float)glfwGetTime();
-            loadingTimer += currentTime - lastFrame;
-            lastFrame = currentTime;
-
-            // Mostrar pantalla de carga (con proporciones correctas)
-            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-            screenShader.use();
-            glBindVertexArray(loadingVAO);
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, loadingTex);
-
-            glDisable(GL_DEPTH_TEST);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-            glEnable(GL_DEPTH_TEST);
-
-            glfwSwapBuffers(window);
-
-            // Verificar si terminó el tiempo de carga
-            if (loadingTimer >= LOADING_DURATION) {
-                loadingComplete = true;
-                gameStarted = true;
-                lastFrame = (float)glfwGetTime(); // Resetear timer
-            }
             continue;
         }
 
@@ -1018,54 +910,16 @@ int main() {
         shader.use();
         shader.setMat4("projection", projection);
         shader.setMat4("view", view);
-        // Luz global desactivada - solo antorchas y linterna iluminan
-        shader.setVec3("lightPos", glm::vec3(0.0f, -1000.0f, 0.0f));
+        shader.setVec3("lightPos", lightPos);
         shader.setVec3("viewPos", camera.Position);
 
-        // ===== INTERMITENCIA DE LINTERNA POR PROXIMIDAD DE ENEMIGOS =====
-        // Calcular distancia mínima a cualquier enemigo
-        float distEnemy1 = glm::distance(camera.Position, enemy1.pos);
-        float distEnemy2 = glm::distance(camera.Position, enemy2.pos);
-        float minEnemyDist = glm::min(distEnemy1, distEnemy2);
+        // compute wide stripe width for hall textures (much thicker stripes)
+        int hallStripeWidth = std::max(1, MAP_W / 6); // base slice
+        const int HALL_STRIPE_THICKNESS = 3; // make stripes3x wider
+        hallStripeWidth = std::min(MAP_W, hallStripeWidth * HALL_STRIPE_THICKNESS);
 
-        // Procesar parpadeo continuo como advertencia
-        bool linternaEfectiva = linternaEncendida;
-
+        shader.setInt("linterna", linternaEncendida);
         if (linternaEncendida) {
-            if (minEnemyDist < ENEMY_CAUGHT_DIST) {
-                // Enemigo te alcanzó - linterna fija encendida (ya no hay escape)
-                linternaFlickerCount = 0;
-                linternaFlickerState = true;
-                linternaEfectiva = true;
-            }
-            else if (minEnemyDist < ENEMY_CLOSE_DIST) {
-                // Muy cerca: parpadeo rápido continuo (3 parpadeos, se repite)
-                linternaFlickerTimer += deltaTime;
-                if (linternaFlickerTimer >= FLICKER_SPEED * 0.5f) { // Más rápido cuando muy cerca
-                    linternaFlickerTimer = 0.0f;
-                    linternaFlickerState = !linternaFlickerState;
-                }
-                linternaEfectiva = linternaFlickerState;
-            }
-            else if (minEnemyDist < ENEMY_APPROACH_DIST) {
-                // Acercándose: parpadeo lento continuo (advertencia)
-                linternaFlickerTimer += deltaTime;
-                if (linternaFlickerTimer >= FLICKER_SPEED * 1.5f) { // Más lento cuando se acerca
-                    linternaFlickerTimer = 0.0f;
-                    linternaFlickerState = !linternaFlickerState;
-                }
-                linternaEfectiva = linternaFlickerState;
-            }
-            else {
-                // Enemigo lejos - linterna normal, sin parpadeo
-                linternaFlickerState = true;
-                linternaFlickerTimer = 0.0f;
-                linternaEfectiva = true;
-            }
-        }
-
-        shader.setInt("linterna", linternaEfectiva);
-        if (linternaEfectiva) {
             shader.setVec3("spotLightPos", camera.Position);
             shader.setVec3("spotLightDir", camera.Front);
             shader.setFloat("spotCutOff", glm::cos(glm::radians(15.0f)));
@@ -1077,40 +931,6 @@ int main() {
 
             shader.setFloat("spotCutOff", 0.0f);
             shader.setFloat("spotOuterCutOff", 0.0f);
-        }
-
-        // ===== LUCES DE ANTORCHA (cubos coleccionables) =====
-        {
-            float t = (float)glfwGetTime();
-
-            // Parpadeo de intensidad tipo fuego
-            float flicker1 = sin(t * 15.0f) * 0.1f;
-            float flicker2 = sin(t * 23.0f) * 0.08f;
-            float flicker3 = sin(t * 7.0f) * 0.15f;
-            float torchFlicker = 0.7f + flicker1 + flicker2 + flicker3;
-            float torchIntensity = torchFlicker * 2.5f;
-
-            // Color de fuego dinámico
-            float colorShift = 0.5f + 0.5f * sin(t * 5.0f);
-            glm::vec3 torchColor;
-            torchColor.r = 1.0f;
-            torchColor.g = 0.4f + 0.3f * colorShift;
-            torchColor.b = 0.1f;
-
-            shader.setVec3("torchColor", torchColor);
-            shader.setFloat("torchIntensity", torchIntensity);
-
-            // Contar y enviar posiciones de cubos no recogidos
-            int numTorches = 0;
-            for (const auto& col : collectibles) {
-                if (!col.collected && numTorches < 10) {
-                    std::string uniform = "torchPositions[" + std::to_string(numTorches) + "]";
-                    glm::vec3 torchLightPos = col.pos + glm::vec3(0.0f, 0.3f, 0.0f);
-                    shader.setVec3(uniform.c_str(), torchLightPos);
-                    numTorches++;
-                }
-            }
-            shader.setInt("numTorchLights", numTorches);
         }
 
         // ===== DIBUJAR SUELO + PAREDES =====
@@ -1154,121 +974,198 @@ int main() {
                 shader.setVec3("baseColor", glm::vec3(0.90f, 0.90f, 0.90f));
 
                 // Norte (r-1)
-                if (!InBounds(r -1, c) || IsWall(r -1, c)) {
-                    int nr = r -1;
+                if (!InBounds(r - 1, c) || IsWall(r - 1, c)) {
+                    int nr = r - 1;
                     int nc = c;
-                    int t = InBounds(nr, nc) ? WallType(nr, nc) :0;
+                    int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
                     unsigned int wallTex;
-                    if (t ==2) wallTex = wallRoomTex;
+                    if (t == 2) wallTex = wallRoomTex;
                     else {
-                        int idx = ((nc %6) +6) %6; // pattern across columns
-                        wallTex = wallHallTex[idx];
+                        // check if this floor cell belongs to a marked indie horizontal segment
+                        bool isIndie = false;
+                        for (const auto& s : indieSegs) {
+                            if (s.dir == 0 && s.startR == r && nc >= s.startC && nc < s.startC + s.len) { isIndie = true; break; }
+                        }
+                        if (isIndie) {
+                            // find which tile of the pair this is and select appropriate indie texture
+                            int chosen = 0; //0 -> first (start),1 -> second
+                            for (const auto& s : indieSegs) {
+                                if (s.dir == 0 && s.startR == r && nc >= s.startC && nc < s.startC + s.len) { chosen = nc - s.startC; break; }
+                            }
+                            wallTex = (chosen == 0) ? wallindie1 : wallindie2;
+                        }
+                        else {
+                            // find start of continuous horizontal wall segment (scan left)
+                            int startC = nc;
+                            while (startC - 1 >= 0 && IsFloor(r, startC - 1) && IsWall(r - 1, startC - 1)) startC--;
+                            int offset = nc - startC;
+                            // reversed sequence:6,5,4,3,2,1 repeating left-to-right
+                            int idx = (5 - (offset % 6) + 6) % 6;
+                            wallTex = wallHallTex[idx];
+                        }
                     }
 
                     shader.setBool("useTexture", true);
                     shader.setBool("useWorldUV", false);
-                    shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
+                    shader.setVec2("texScale2", glm::vec2(1.0f, 1.0f));
                     // flip vertically only for hall textures to fix inverted pattern
-                    shader.setBool("flipTexY", (t ==2) ? false : true);
+                    shader.setBool("flipTexY", (t == 2) ? false : true);
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, wallTex);
                     shader.setVec3("baseColor", glm::vec3(1.0f));
 
                     model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(w.x,0.0f, w.z + TILE *0.5f));
-                    model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0,1,0));
-                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT,1.0f));
+                    model = glm::translate(model, glm::vec3(w.x, 0.0f, w.z + TILE * 0.5f));
+                    model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0, 1, 0));
+                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
                     shader.setMat4("model", model);
-                    glDrawArrays(GL_TRIANGLES,0,6);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
 
                     shader.setBool("useTexture", false);
                 }
 
                 // Sur (r+1)
-                if (!InBounds(r +1, c) || IsWall(r +1, c)) {
-                    int nr = r +1;
+                if (!InBounds(r + 1, c) || IsWall(r + 1, c)) {
+                    int nr = r + 1;
                     int nc = c;
-                    int t = InBounds(nr, nc) ? WallType(nr, nc) :0;
+                    int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
                     unsigned int wallTex;
-                    if (t ==2) wallTex = wallRoomTex;
+                    if (t == 2) wallTex = wallRoomTex;
                     else {
-                        int idx = ((nc %6) +6) %6;
-                        wallTex = wallHallTex[idx];
+                        // check if this floor cell belongs to a marked indie horizontal segment
+                        bool isIndie = false;
+                        for (const auto& s : indieSegs) {
+                            if (s.dir == 0 && s.startR == r && nc >= s.startC && nc < s.startC + s.len) { isIndie = true; break; }
+                        }
+                        if (isIndie) {
+                            // find which tile of the pair this is and select appropriate indie texture
+                            int chosen = 0;
+                            for (const auto& s : indieSegs) {
+                                if (s.dir == 0 && s.startR == r && nc >= s.startC && nc < s.startC + s.len) { chosen = nc - s.startC; break; }
+                            }
+                            wallTex = (chosen == 0) ? wallindie1 : wallindie2;
+                        }
+                        else {
+                            // find start of continuous horizontal wall segment (scan left)
+                            int startC = nc;
+                            while (startC - 1 >= 0 && IsFloor(r, startC - 1) && IsWall(r + 1, startC - 1)) startC--;
+                            int offset = nc - startC;
+                            int idx = (5 - (offset % 6) + 6) % 6;
+                            wallTex = wallHallTex[idx];
+                        }
                     }
 
                     shader.setBool("useTexture", true);
                     shader.setBool("useWorldUV", false);
-                    shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
-                    shader.setBool("flipTexY", (t ==2) ? false : true);
+                    shader.setVec2("texScale2", glm::vec2(1.0f, 1.0f));
+                    shader.setBool("flipTexY", (t == 2) ? false : true);
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, wallTex);
                     shader.setVec3("baseColor", glm::vec3(1.0f));
 
                     model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(w.x,0.0f, w.z - TILE *0.5f));
-                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT,1.0f));
+                    model = glm::translate(model, glm::vec3(w.x, 0.0f, w.z - TILE * 0.5f));
+                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
                     shader.setMat4("model", model);
-                    glDrawArrays(GL_TRIANGLES,0,6);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
 
                     shader.setBool("useTexture", false);
                 }
 
                 // Oeste (c-1)
-                if (!InBounds(r, c -1) || IsWall(r, c -1)) {
+                if (!InBounds(r, c - 1) || IsWall(r, c - 1)) {
                     int nr = r;
-                    int nc = c -1;
-                    int t = InBounds(nr, nc) ? WallType(nr, nc) :0;
+                    int nc = c - 1;
+                    int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
                     unsigned int wallTex;
-                    if (t ==2) wallTex = wallRoomTex;
+                    if (t == 2) wallTex = wallRoomTex;
                     else {
-                        int idx = ((nc %6) +6) %6;
-                        wallTex = wallHallTex[idx];
+                        // check if this floor cell belongs to a marked indie vertical segment
+                        bool isIndie = false;
+                        for (const auto& s : indieSegs) {
+                            if (s.dir == 1 && s.startC == c && nr >= s.startR && nr < s.startR + s.len) { isIndie = true; break; }
+                        }
+                        if (isIndie) {
+                            // find which tile of the pair this is and select appropriate indie texture
+                            int chosen = 0;
+                            for (const auto& s : indieSegs) {
+                                if (s.dir == 1 && s.startC == c && nr >= s.startR && nr < s.startR + s.len) { chosen = nr - s.startR; break; }
+                            }
+                            wallTex = (chosen == 0) ? wallindie1 : wallindie2;
+                        }
+                        else {
+                            // find start of continuous vertical wall segment (scan up)
+                            int startR = nr;
+                            while (startR - 1 >= 0 && IsFloor(startR - 1, c) && IsWall(startR - 1, c - 1)) startR--;
+                            int offset = nr - startR;
+                            int idx = (5 - (offset % 6) + 6) % 6;
+                            wallTex = wallHallTex[idx];
+                        }
                     }
 
                     shader.setBool("useTexture", true);
                     shader.setBool("useWorldUV", false);
-                    shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
-                    shader.setBool("flipTexY", (t ==2) ? false : true);
+                    shader.setVec2("texScale2", glm::vec2(1.0f, 1.0f));
+                    shader.setBool("flipTexY", (t == 2) ? false : true);
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, wallTex);
                     shader.setVec3("baseColor", glm::vec3(1.0f));
 
                     model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(w.x - TILE *0.5f,0.0f, w.z));
-                    model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0,1,0));
-                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT,1.0f));
+                    model = glm::translate(model, glm::vec3(w.x - TILE * 0.5f, 0.0f, w.z));
+                    model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0, 1, 0));
+                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
                     shader.setMat4("model", model);
-                    glDrawArrays(GL_TRIANGLES,0,6);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
 
                     shader.setBool("useTexture", false);
                 }
 
                 // Este (c+1)
-                if (!InBounds(r, c +1) || IsWall(r, c +1)) {
+                if (!InBounds(r, c + 1) || IsWall(r, c + 1)) {
                     int nr = r;
-                    int nc = c +1;
-                    int t = InBounds(nr, nc) ? WallType(nr, nc) :0;
+                    int nc = c + 1;
+                    int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
                     unsigned int wallTex;
-                    if (t ==2) wallTex = wallRoomTex;
+                    if (t == 2) wallTex = wallRoomTex;
                     else {
-                        int idx = ((nc %6) +6) %6;
-                        wallTex = wallHallTex[idx];
+                        // check if this floor cell belongs to a marked indie vertical segment
+                        bool isIndie = false;
+                        for (const auto& s : indieSegs) {
+                            if (s.dir == 1 && s.startC == c && nr >= s.startR && nr < s.startR + s.len) { isIndie = true; break; }
+                        }
+                        if (isIndie) {
+                            // find which tile of the pair this is and select appropriate indie texture
+                            int chosen = 0;
+                            for (const auto& s : indieSegs) {
+                                if (s.dir == 1 && s.startC == c && nr >= s.startR && nr < s.startR + s.len) { chosen = nr - s.startR; break; }
+                            }
+                            wallTex = (chosen == 0) ? wallindie1 : wallindie2;
+                        }
+                        else {
+                            // find start of continuous vertical wall segment (scan up)
+                            int startR = nr;
+                            while (startR - 1 >= 0 && IsFloor(startR - 1, c) && IsWall(startR - 1, c + 1)) startR--;
+                            int offset = nr - startR;
+                            int idx = (5 - (offset % 6) + 6) % 6;
+                            wallTex = wallHallTex[idx];
+                        }
                     }
 
                     shader.setBool("useTexture", true);
                     shader.setBool("useWorldUV", false);
-                    shader.setVec2("texScale2", glm::vec2(1.0f,1.0f));
-                    shader.setBool("flipTexY", (t ==2) ? false : true);
+                    shader.setVec2("texScale2", glm::vec2(1.0f, 1.0f));
+                    shader.setBool("flipTexY", (t == 2) ? false : true);
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, wallTex);
                     shader.setVec3("baseColor", glm::vec3(1.0f));
 
                     model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(w.x + TILE *0.5f,0.0f, w.z));
-                    model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0,1,0));
-                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT,1.0f));
+                    model = glm::translate(model, glm::vec3(w.x + TILE * 0.5f, 0.0f, w.z));
+                    model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0, 1, 0));
+                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
                     shader.setMat4("model", model);
-                    glDrawArrays(GL_TRIANGLES,0,6);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
 
                     shader.setBool("useTexture", false);
                 }
@@ -1277,48 +1174,28 @@ int main() {
         }
 
         // ================= ACTUALIZAR ENEMIGOS (IA) =================
+        // Haremos que recalcule el camino frame a frame hacia el centro de la siguiente celda
         Point playerGrid = WorldToCell(camera.Position);
 
-        // ===== ENEMY1: Movimiento aleatorio =====
-        {
-            // Si no tiene objetivo o llegó al objetivo, buscar nuevo objetivo aleatorio
-            if (!enemy1HasTarget || (enemy1.r == enemy1RandomTarget.r && enemy1.c == enemy1RandomTarget.c)) {
-                enemy1RandomTarget = GetRandomFloorCell();
-                enemy1HasTarget = true;
-            }
+        Enemy* enemies[] = { &enemy1, &enemy2 };
+        for (Enemy* e : enemies) {
+            // 1. Calcular siguiente casilla ideal con BFS
+            Point nextCell = GetNextStepBFS(e->r, e->c, playerGrid.r, playerGrid.c);
 
-            // Usar BFS para moverse hacia el objetivo aleatorio
-            Point nextCell = GetNextStepBFS(enemy1.r, enemy1.c, enemy1RandomTarget.r, enemy1RandomTarget.c);
+            // 2. Obtener posición world del centro de esa casilla
             glm::vec3 targetWorld = CellToWorld(nextCell.r, nextCell.c);
 
-            // Moverse suavemente hacia ese objetivo
-            glm::vec3 dir = targetWorld - enemy1.pos;
+            // 3. Moverse suavemente hacia ese objetivo
+            glm::vec3 dir = targetWorld - e->pos;
             if (glm::length(dir) > 0.01f) {
                 dir = glm::normalize(dir);
-                enemy1.pos += dir * enemy1.speed * deltaTime;
+                e->pos += dir * e->speed * deltaTime;
             }
 
-            // Si está muy cerca del centro de la casilla objetivo, actualizar su grid lógico
-            if (glm::distance(enemy1.pos, targetWorld) < 0.1f) {
-                enemy1.r = nextCell.r;
-                enemy1.c = nextCell.c;
-            }
-        }
-
-        // ===== ENEMY2: Persigue al jugador (comportamiento original) =====
-        {
-            Point nextCell = GetNextStepBFS(enemy2.r, enemy2.c, playerGrid.r, playerGrid.c);
-            glm::vec3 targetWorld = CellToWorld(nextCell.r, nextCell.c);
-
-            glm::vec3 dir = targetWorld - enemy2.pos;
-            if (glm::length(dir) > 0.01f) {
-                dir = glm::normalize(dir);
-                enemy2.pos += dir * enemy2.speed * deltaTime;
-            }
-
-            if (glm::distance(enemy2.pos, targetWorld) < 0.1f) {
-                enemy2.r = nextCell.r;
-                enemy2.c = nextCell.c;
+            // 4. Si está muy cerca del centro de la casilla objetivo, actualizar su grid lógico
+            if (glm::distance(e->pos, targetWorld) < 0.1f) {
+                e->r = nextCell.r;
+                e->c = nextCell.c;
             }
         }
 
@@ -1329,8 +1206,7 @@ int main() {
         // Color rojo amenazante para los enemigos
         shader.setVec3("baseColor", glm::vec3(0.8f, 0.0f, 0.0f));
 
-        Enemy* enemiesToDraw[] = { &enemy1, &enemy2 };
-        for (Enemy* e : enemiesToDraw) {
+        for (Enemy* e : enemies) {
             glBindVertexArray(cubeVAO); // Reusamos el cubo de la luz
             glm::mat4 model = glm::mat4(1.0f);
             model = glm::translate(model, e->pos);
@@ -1340,7 +1216,22 @@ int main() {
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
 
-        // ===== CUBO LUZ ELIMINADO - Solo antorchas y linterna iluminan =====
+        // ===== CUBO LUZ =====
+        // The light cube visualization was removed per request so it is not rendered in the sky.
+        // If you want to re-enable for debugging, uncomment the block below.
+        /*
+        lightShader.use();
+        lightShader.setMat4("projection", projection);
+        lightShader.setMat4("view", view);
+
+        glm::mat4 mLight = glm::mat4(1.0f);
+        mLight = glm::translate(mLight, lightPos);
+        mLight = glm::scale(mLight, glm::vec3(LIGHT_CUBE_SCALE));
+        lightShader.setMat4("model", mLight);
+
+        glBindVertexArray(cubeVAO);
+        glDrawArrays(GL_TRIANGLES,0,36);
+        */
 
         // ================= RECOLECCIÓN Y DIBUJO DE CUBOS COLECCIONABLES =================
         CheckCollectibles(camera.Position, window);
@@ -1349,146 +1240,18 @@ int main() {
         if (collectibles.size() > 0) {
             glBindVertexArray(cubeVAO);
             shader.use();
-
-            // ===== EFECTO ANTORCHA =====
-            float t = (float)glfwGetTime();
-
-            // Parpadeo irregular tipo llama (combinación de frecuencias)
-            float flicker1 = sin(t * 15.0f) * 0.1f;
-            float flicker2 = sin(t * 23.0f) * 0.08f;
-            float flicker3 = sin(t * 7.0f) * 0.15f;
-            float flicker = 0.7f + flicker1 + flicker2 + flicker3;
-
-            // Pulso más lento de fondo
-            float pulse = 0.85f + 0.15f * sin(t * 3.0f);
-            float fireBrightness = flicker * pulse;
-
-            // Color de fuego que varía (naranja -> amarillo -> rojo)
-            float colorShift = 0.5f + 0.5f * sin(t * 5.0f);
-            glm::vec3 fireColor;
-            fireColor.r = 1.0f * fireBrightness;
-            fireColor.g = (0.3f + 0.4f * colorShift) * fireBrightness;
-            fireColor.b = 0.05f * fireBrightness;
-
-            shader.setVec3("baseColor", fireColor);
+            shader.setVec3("baseColor", glm::vec3(0.8f, 0.8f, 0.0f)); // Color amarillo para los cubos
 
             for (const auto& col : collectibles) {
-                if (col.collected) continue;
+                if (col.collected) continue; // Solo dibujar los no recogidos
 
                 glm::mat4 model = glm::mat4(1.0f);
-
-                // Posición con pequeño movimiento vertical como llama
-                float yOffset = 0.03f * sin(t * 8.0f + col.pos.x * 2.0f);
-                model = glm::translate(model, col.pos + glm::vec3(0.0f, yOffset, 0.0f));
-
-                // Rotación lenta
-                model = glm::rotate(model, t * 0.8f, glm::vec3(0.0f, 1.0f, 0.0f));
-
-                // Escala con pulsación de llama
-                float scaleFlicker = 0.22f + 0.04f * sin(t * 12.0f + col.pos.z);
-                model = glm::scale(model, glm::vec3(scaleFlicker));
+                model = glm::translate(model, col.pos);
+                model = glm::scale(model, glm::vec3(0.2f)); // Tamaño más pequeño para los cubos
                 shader.setMat4("model", model);
 
                 glDrawArrays(GL_TRIANGLES, 0, 36);
             }
-        }
-
-        // ================= DIBUJAR MINIMAPA (solo si linterna encendida) =================
-        if (linternaEncendida) {
-            // Configurar para dibujo 2D
-            glDisable(GL_DEPTH_TEST);
-
-            // Obtener posición del jugador en el grid
-            Point playerCell = WorldToCell(camera.Position);
-
-            // Proyección ortográfica para el minimapa (esquina superior derecha)
-            float mapX = SCR_WIDTH - MINIMAP_SIZE - MINIMAP_MARGIN;
-            float mapY = SCR_HEIGHT - MINIMAP_SIZE - MINIMAP_MARGIN;
-
-            glm::mat4 minimapProj = glm::ortho(0.0f, (float)SCR_WIDTH, 0.0f, (float)SCR_HEIGHT);
-
-            minimapShader.use();
-            minimapShader.setMat4("projection", minimapProj);
-            glBindVertexArray(minimapVAO);
-
-            // Fondo del minimapa (negro semi-transparente)
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-            // Dibujar fondo
-            minimapShader.setVec3("color", glm::vec3(0.1f, 0.1f, 0.15f));
-            minimapShader.setVec2("offset", glm::vec2(mapX - 5, mapY - 5));
-            minimapShader.setVec2("scale", glm::vec2(MINIMAP_SIZE + 10, MINIMAP_SIZE + 10));
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-
-            // Dibujar celdas del minimapa
-            for (int dr = -MINIMAP_RADIUS; dr <= MINIMAP_RADIUS; dr++) {
-                for (int dc = -MINIMAP_RADIUS; dc <= MINIMAP_RADIUS; dc++) {
-                    int r = playerCell.r + dr;
-                    int c = playerCell.c + dc;
-
-                    // Posición en pantalla - invertir X para coincidir con movimiento de cámara
-                    float cellX = mapX + (MINIMAP_RADIUS - dc) * MINIMAP_CELL_SIZE;
-                    float cellY = mapY + (MINIMAP_RADIUS - dr) * MINIMAP_CELL_SIZE;
-
-                    glm::vec3 cellColor;
-
-                    if (!InBounds(r, c)) {
-                        // Fuera del mapa - gris oscuro
-                        cellColor = glm::vec3(0.15f, 0.15f, 0.15f);
-                    } else if (IsWall(r, c)) {
-                        // Pared - gris claro
-                        cellColor = glm::vec3(0.4f, 0.4f, 0.45f);
-                    } else if (IsFloor(r, c)) {
-                        // Suelo - marrón oscuro
-                        cellColor = glm::vec3(0.2f, 0.15f, 0.1f);
-                    } else if (Cell(r, c) == 'E') {
-                        // Salida - verde
-                        cellColor = glm::vec3(0.0f, 0.8f, 0.0f);
-                    } else {
-                        // Otro - negro
-                        cellColor = glm::vec3(0.1f, 0.1f, 0.1f);
-                    }
-
-                    minimapShader.setVec3("color", cellColor);
-                    minimapShader.setVec2("offset", glm::vec2(cellX, cellY));
-                    minimapShader.setVec2("scale", glm::vec2(MINIMAP_CELL_SIZE - 1, MINIMAP_CELL_SIZE - 1));
-                    glDrawArrays(GL_TRIANGLES, 0, 6);
-                }
-            }
-
-
-            // Dibujar jugador en el centro (triángulo o cuadrado azul)
-            float playerX = mapX + MINIMAP_RADIUS * MINIMAP_CELL_SIZE;
-            float playerY = mapY + MINIMAP_RADIUS * MINIMAP_CELL_SIZE;
-
-            // Jugador - cian brillante
-            minimapShader.setVec3("color", glm::vec3(0.0f, 1.0f, 1.0f));
-            minimapShader.setVec2("offset", glm::vec2(playerX + 2, playerY + 2));
-            minimapShader.setVec2("scale", glm::vec2(MINIMAP_CELL_SIZE - 5, MINIMAP_CELL_SIZE - 5));
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-
-            // Borde del minimapa
-            minimapShader.setVec3("color", glm::vec3(0.6f, 0.6f, 0.7f));
-            // Borde superior
-            minimapShader.setVec2("offset", glm::vec2(mapX - 5, mapY + MINIMAP_SIZE + 3));
-            minimapShader.setVec2("scale", glm::vec2(MINIMAP_SIZE + 10, 3));
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-            // Borde inferior
-            minimapShader.setVec2("offset", glm::vec2(mapX - 5, mapY - 8));
-            minimapShader.setVec2("scale", glm::vec2(MINIMAP_SIZE + 10, 3));
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-            // Borde izquierdo
-            minimapShader.setVec2("offset", glm::vec2(mapX - 8, mapY - 5));
-            minimapShader.setVec2("scale", glm::vec2(3, MINIMAP_SIZE + 10));
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-            // Borde derecho
-            minimapShader.setVec2("offset", glm::vec2(mapX + MINIMAP_SIZE + 3, mapY - 5));
-            minimapShader.setVec2("scale", glm::vec2(3, MINIMAP_SIZE + 10));
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-
-            glDisable(GL_BLEND);
-            glEnable(GL_DEPTH_TEST);
         }
 
         glfwSwapBuffers(window);

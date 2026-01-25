@@ -460,156 +460,327 @@ static Point WorldToCell(glm::vec3 pos) {
     return { r, c };
 }
 
-// ===== OPTIMIZACIÓN BFS: Constantes y buffers reutilizables =====
-// CAMBIO: Usar vectores estáticos reutilizables en lugar de arrays grandes en stack
-static std::vector<std::vector<bool>> bfsVisited;
-static std::vector<std::vector<Point>> bfsParent;
-static bool bfsBuffersInitialized = false;
-const int BFS_MAX_DISTANCE = 50; // CAMBIO: Limitar búsqueda a 50 celdas de distancia
-const float PATH_RECALC_INTERVAL = 0.25f; // CAMBIO: Recalcular camino cada 0.25 segundos máximo
+// =====================================================================
+// ALGORITMO A* OPTIMIZADO CON PERSECUCIÓN INTELIGENTE
+// =====================================================================
+// Ventajas sobre BFS:
+// 1. A* usa heurística (distancia Manhattan) para explorar menos nodos
+// 2. Persecución directa cuando hay línea de visión (evita pathfinding)
+// 3. Caché inteligente que solo recalcula cuando es necesario
+// 4. Early-exit cuando el enemigo está cerca del jugador
+// =====================================================================
 
-// CAMBIO: Función para inicializar buffers BFS una sola vez
-static void InitBFSBuffers() {
-    if (bfsBuffersInitialized && (int)bfsVisited.size() == MAP_H && 
-        (bfsVisited.empty() || (int)bfsVisited[0].size() == MAP_W)) {
-        return; // Ya inicializado con el tamaño correcto
+#include <unordered_set>
+#include <cmath>
+
+// Estructura para nodos del A*
+struct AStarNode {
+    int r, c;
+    int g;  // Costo desde el inicio
+    int f;  // g + h (costo total estimado)
+    
+    // Para priority_queue (menor f tiene mayor prioridad)
+    bool operator>(const AStarNode& other) const {
+        return f > other.f;
     }
-    bfsVisited.assign(MAP_H, std::vector<bool>(MAP_W, false));
-    bfsParent.assign(MAP_H, std::vector<Point>(MAP_W, {-1, -1}));
-    bfsBuffersInitialized = true;
+};
+
+// Constantes de pathfinding optimizadas
+const int PATHFIND_MAX_NODES = 800;        // Máximo nodos a explorar (reduce CPU)
+const float PATH_RECALC_INTERVAL = 0.3f;   // Recalcular cada 0.3s (más que antes)
+const int DIRECT_CHASE_DISTANCE = 3;       // Distancia para persecución directa
+const int LINE_OF_SIGHT_CHECK = 8;         // Máximo para verificar línea de visión
+
+// Buffers estáticos reutilizables para A*
+static std::vector<std::vector<int>> astarG;      // Costo g por celda
+static std::vector<std::vector<bool>> astarClosed; // Nodos cerrados
+static std::vector<std::vector<Point>> astarParent; // Padres para reconstruir
+static bool astarBuffersInit = false;
+
+// Inicializar buffers A* una sola vez
+static void InitAStarBuffers() {
+    if (astarBuffersInit && (int)astarG.size() == MAP_H) return;
+    
+    astarG.assign(MAP_H, std::vector<int>(MAP_W, INT_MAX));
+    astarClosed.assign(MAP_H, std::vector<bool>(MAP_W, false));
+    astarParent.assign(MAP_H, std::vector<Point>(MAP_W, {-1, -1}));
+    astarBuffersInit = true;
 }
 
-// CAMBIO: Función para limpiar solo la región usada (más eficiente)
-static void ClearBFSRegion(int centerR, int centerC, int radius) {
-    int minR = std::max(0, centerR - radius);
-    int maxR = std::min(MAP_H - 1, centerR + radius);
-    int minC = std::max(0, centerC - radius);
-    int maxC = std::min(MAP_W - 1, centerC + radius);
+// Limpiar solo región necesaria (optimización clave)
+static void ClearAStarRegion(int r1, int c1, int r2, int c2, int margin = 5) {
+    int minR = std::max(0, std::min(r1, r2) - margin);
+    int maxR = std::min(MAP_H - 1, std::max(r1, r2) + margin);
+    int minC = std::max(0, std::min(c1, c2) - margin);
+    int maxC = std::min(MAP_W - 1, std::max(c1, c2) + margin);
     
     for (int r = minR; r <= maxR; r++) {
         for (int c = minC; c <= maxC; c++) {
-            bfsVisited[r][c] = false;
-            bfsParent[r][c] = {-1, -1};
+            astarG[r][c] = INT_MAX;
+            astarClosed[r][c] = false;
+            astarParent[r][c] = {-1, -1};
         }
     }
 }
 
-// ALGORITMO BFS OPTIMIZADO: Calcula el camino completo hacia el objetivo
-// CAMBIO: Retorna el camino completo en lugar de solo el siguiente paso
-static std::vector<Point> ComputeFullPathBFS(int startR, int startC, int targetR, int targetC) {
+// Heurística: Distancia Manhattan (admisible para grid 4-direccional)
+static inline int Heuristic(int r1, int c1, int r2, int c2) {
+    return abs(r1 - r2) + abs(c1 - c2);
+}
+
+// Verificar línea de visión entre dos puntos (Bresenham simplificado)
+// Si hay línea de visión directa, no necesitamos pathfinding
+static bool HasLineOfSight(int r1, int c1, int r2, int c2) {
+    int dr = abs(r2 - r1);
+    int dc = abs(c2 - c1);
+    
+    // Limitar distancia de verificación
+    if (dr + dc > LINE_OF_SIGHT_CHECK) return false;
+    
+    int sr = (r1 < r2) ? 1 : -1;
+    int sc = (c1 < c2) ? 1 : -1;
+    
+    int err = dr - dc;
+    int r = r1, c = c1;
+    
+    while (r != r2 || c != c2) {
+        // Verificar si la celda actual es caminable
+        if (!InBounds(r, c) || !IsFloor(r, c)) return false;
+        
+        int e2 = 2 * err;
+        if (e2 > -dc) { err -= dc; r += sr; }
+        if (e2 < dr)  { err += dr; c += sc; }
+    }
+    
+    return InBounds(r2, c2) && IsFloor(r2, c2);
+}
+
+// ALGORITMO A* OPTIMIZADO
+static std::vector<Point> ComputePathAStar(int startR, int startC, int targetR, int targetC) {
     std::vector<Point> path;
     
-    // Si ya está en el destino, retornar vacío
+    // Caso trivial: ya estamos en el destino
     if (startR == targetR && startC == targetC) return path;
     
-    // CAMBIO: Verificar distancia Manhattan antes de buscar (early exit)
-    int manhattanDist = abs(targetR - startR) + abs(targetC - startC);
-    if (manhattanDist > BFS_MAX_DISTANCE * 2) {
-        // Objetivo muy lejos, no buscar
+    // Early exit: si están muy lejos, no buscar (el enemigo se moverá hacia el jugador de forma aproximada)
+    int manhattan = Heuristic(startR, startC, targetR, targetC);
+    if (manhattan > 60) {
+        // Mover hacia la dirección general del jugador
+        int bestR = startR, bestC = startC;
+        int bestDist = manhattan;
+        
+        const int dr[] = {-1, 1, 0, 0};
+        const int dc[] = {0, 0, -1, 1};
+        
+        for (int i = 0; i < 4; i++) {
+            int nr = startR + dr[i];
+            int nc = startC + dc[i];
+            if (InBounds(nr, nc) && IsFloor(nr, nc)) {
+                int dist = Heuristic(nr, nc, targetR, targetC);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestR = nr;
+                    bestC = nc;
+                }
+            }
+        }
+        
+        if (bestR != startR || bestC != startC) {
+            path.push_back({bestR, bestC});
+        }
         return path;
     }
     
-    // CAMBIO: Inicializar buffers si es necesario
-    InitBFSBuffers();
+    // Verificar línea de visión directa (evita A* completamente)
+    if (HasLineOfSight(startR, startC, targetR, targetC)) {
+        // Construir camino directo
+        int r = startR, c = startC;
+        while (r != targetR || c != targetC) {
+            int dr = (targetR > r) ? 1 : (targetR < r) ? -1 : 0;
+            int dc = (targetC > c) ? 1 : (targetC < c) ? -1 : 0;
+            
+            // Preferir movimiento en una dirección a la vez
+            if (dr != 0 && InBounds(r + dr, c) && IsFloor(r + dr, c)) {
+                r += dr;
+            } else if (dc != 0 && InBounds(r, c + dc) && IsFloor(r, c + dc)) {
+                c += dc;
+            } else {
+                break; // No hay camino directo
+            }
+            path.push_back({r, c});
+        }
+        if (!path.empty()) return path;
+    }
     
-    // CAMBIO: Limpiar solo la región relevante
-    ClearBFSRegion(startR, startC, BFS_MAX_DISTANCE);
+    // A* completo cuando no hay línea de visión
+    InitAStarBuffers();
+    ClearAStarRegion(startR, startC, targetR, targetC, 10);
+    
+    // Priority queue (min-heap por f)
+    std::priority_queue<AStarNode, std::vector<AStarNode>, std::greater<AStarNode>> openSet;
     
     // Direcciones: Arriba, Abajo, Izquierda, Derecha
-    const int dr[] = { -1, 1, 0, 0 };
-    const int dc[] = { 0, 0, -1, 1 };
+    const int dr[] = {-1, 1, 0, 0};
+    const int dc[] = {0, 0, -1, 1};
     
-    std::queue<Point> q;
-    q.push({ startR, startC });
-    bfsVisited[startR][startC] = true;
-    bfsParent[startR][startC] = { -1, -1 };
+    // Iniciar desde el punto de inicio
+    astarG[startR][startC] = 0;
+    int h = Heuristic(startR, startC, targetR, targetC);
+    openSet.push({startR, startC, 0, h});
     
     bool found = false;
     int nodesExplored = 0;
-    const int MAX_NODES = BFS_MAX_DISTANCE * BFS_MAX_DISTANCE; // CAMBIO: Limitar nodos explorados
     
-    while (!q.empty() && nodesExplored < MAX_NODES) {
-        Point curr = q.front();
-        q.pop();
+    while (!openSet.empty() && nodesExplored < PATHFIND_MAX_NODES) {
+        AStarNode current = openSet.top();
+        openSet.pop();
+        
+        // Si ya procesamos este nodo, saltar
+        if (astarClosed[current.r][current.c]) continue;
+        astarClosed[current.r][current.c] = true;
         nodesExplored++;
         
-        if (curr.r == targetR && curr.c == targetC) {
+        // ¿Llegamos al destino?
+        if (current.r == targetR && current.c == targetC) {
             found = true;
             break;
         }
         
-        // CAMBIO: Verificar si estamos demasiado lejos del inicio
-        if (abs(curr.r - startR) > BFS_MAX_DISTANCE || abs(curr.c - startC) > BFS_MAX_DISTANCE) {
-            continue;
-        }
-        
         // Explorar vecinos
         for (int i = 0; i < 4; i++) {
-            int nr = curr.r + dr[i];
-            int nc = curr.c + dc[i];
+            int nr = current.r + dr[i];
+            int nc = current.c + dc[i];
             
-            // Validar límites y que sea suelo
-            if (InBounds(nr, nc) && !bfsVisited[nr][nc] && IsFloor(nr, nc)) {
-                bfsVisited[nr][nc] = true;
-                bfsParent[nr][nc] = curr;
-                q.push({ nr, nc });
+            if (!InBounds(nr, nc) || !IsFloor(nr, nc) || astarClosed[nr][nc]) continue;
+            
+            int tentativeG = current.g + 1;
+            
+            if (tentativeG < astarG[nr][nc]) {
+                astarG[nr][nc] = tentativeG;
+                astarParent[nr][nc] = {current.r, current.c};
+                int f = tentativeG + Heuristic(nr, nc, targetR, targetC);
+                openSet.push({nr, nc, tentativeG, f});
             }
         }
     }
     
-    if (!found) return path; // No hay camino
-    
-    // CAMBIO: Reconstruir camino completo
-    Point curr = { targetR, targetC };
-    while (curr.r != startR || curr.c != startC) {
-        path.push_back(curr);
-        curr = bfsParent[curr.r][curr.c];
-        if (curr.r == -1) break; // Seguridad
+    if (!found) {
+        // No encontramos camino completo, pero podemos movernos hacia el mejor nodo explorado
+        // Buscar el nodo cerrado más cercano al objetivo
+        int bestR = startR, bestC = startC;
+        int bestH = Heuristic(startR, startC, targetR, targetC);
+        
+        // Buscar en región pequeña alrededor del inicio
+        for (int dr = -5; dr <= 5; dr++) {
+            for (int dc = -5; dc <= 5; dc++) {
+                int r = startR + dr;
+                int c = startC + dc;
+                if (InBounds(r, c) && astarClosed[r][c]) {
+                    int h = Heuristic(r, c, targetR, targetC);
+                    if (h < bestH) {
+                        bestH = h;
+                        bestR = r;
+                        bestC = c;
+                    }
+                }
+            }
+        }
+        
+        // Reconstruir camino hacia el mejor nodo encontrado
+        if (bestR != startR || bestC != startC) {
+            Point curr = {bestR, bestC};
+            while (curr.r != startR || curr.c != startC) {
+                path.push_back(curr);
+                curr = astarParent[curr.r][curr.c];
+                if (curr.r == -1) break;
+            }
+            std::reverse(path.begin(), path.end());
+        }
+        return path;
     }
     
-    // CAMBIO: Invertir para que el primer elemento sea el siguiente paso
+    // Reconstruir camino desde el objetivo
+    Point curr = {targetR, targetC};
+    while (curr.r != startR || curr.c != startC) {
+        path.push_back(curr);
+        curr = astarParent[curr.r][curr.c];
+        if (curr.r == -1) break;
+    }
     std::reverse(path.begin(), path.end());
     
     return path;
 }
 
-// CAMBIO: Nueva función que usa caché del enemigo
-static Point GetNextStepBFS_Cached(Enemy& e, int targetR, int targetC, float dt) {
-    // CAMBIO: Actualizar timer de recálculo
+// Función principal de pathfinding con caché inteligente
+static Point GetNextStepAStar(Enemy& e, int targetR, int targetC, float dt) {
     e.pathRecalcTimer += dt;
     
-    // CAMBIO: Verificar si necesitamos recalcular el camino
+    // Calcular distancia al jugador
+    int distToPlayer = Heuristic(e.r, e.c, targetR, targetC);
+    
+    // OPTIMIZACIÓN 1: Persecución directa si está muy cerca
+    if (distToPlayer <= DIRECT_CHASE_DISTANCE) {
+        // Buscar la celda adyacente que más nos acerque
+        const int dr[] = {-1, 1, 0, 0};
+        const int dc[] = {0, 0, -1, 1};
+        
+        int bestR = e.r, bestC = e.c;
+        int bestDist = distToPlayer;
+        
+        for (int i = 0; i < 4; i++) {
+            int nr = e.r + dr[i];
+            int nc = e.c + dc[i];
+            if (InBounds(nr, nc) && IsFloor(nr, nc)) {
+                int dist = Heuristic(nr, nc, targetR, targetC);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestR = nr;
+                    bestC = nc;
+                }
+            }
+        }
+        
+        return {bestR, bestC};
+    }
+    
+    // OPTIMIZACIÓN 2: Verificar si el caché sigue siendo válido
     bool needRecalc = false;
     
-    // Recalcular si:
-    // 1. El jugador se movió a otra celda
-    // 2. El enemigo llegó a su destino y necesita nuevo camino
-    // 3. El caché está vacío
-    // 4. Pasó suficiente tiempo (para corregir si el jugador se movió)
-    if (e.lastPlayerR != targetR || e.lastPlayerC != targetC) {
+    // Recalcular si el jugador se movió significativamente (más de 2 celdas)
+    int playerMoved = Heuristic(e.lastPlayerR, e.lastPlayerC, targetR, targetC);
+    if (playerMoved > 2) {
         needRecalc = true;
     }
+    
+    // Recalcular si el caché está vacío
     if (e.cachedPath.empty()) {
         needRecalc = true;
     }
+    
+    // Recalcular periódicamente (pero con intervalo más largo)
     if (e.pathRecalcTimer >= PATH_RECALC_INTERVAL) {
         needRecalc = true;
         e.pathRecalcTimer = 0.0f;
     }
-    // Si el enemigo cambió de celda, verificar si el camino sigue siendo válido
+    
+    // OPTIMIZACIÓN 3: Actualizar caché cuando el enemigo se mueve
     if (e.lastEnemyR != e.r || e.lastEnemyC != e.c) {
-        // Remover pasos del camino que ya pasamos
-        while (!e.cachedPath.empty() && 
-               e.cachedPath.front().r == e.r && e.cachedPath.front().c == e.c) {
-            e.cachedPath.erase(e.cachedPath.begin());
+        // Remover pasos ya completados del caché
+        while (!e.cachedPath.empty()) {
+            Point& front = e.cachedPath.front();
+            if (front.r == e.r && front.c == e.c) {
+                e.cachedPath.erase(e.cachedPath.begin());
+            } else {
+                break;
+            }
         }
         e.lastEnemyR = e.r;
         e.lastEnemyC = e.c;
     }
     
-    // CAMBIO: Recalcular camino si es necesario
+    // Recalcular si es necesario
     if (needRecalc) {
-        e.cachedPath = ComputeFullPathBFS(e.r, e.c, targetR, targetC);
+        e.cachedPath = ComputePathAStar(e.r, e.c, targetR, targetC);
         e.lastPlayerR = targetR;
         e.lastPlayerC = targetC;
         e.lastEnemyR = e.r;
@@ -617,22 +788,28 @@ static Point GetNextStepBFS_Cached(Enemy& e, int targetR, int targetC, float dt)
         e.pathRecalcTimer = 0.0f;
     }
     
-    // CAMBIO: Retornar siguiente paso del camino cacheado
+    // Retornar siguiente paso
     if (!e.cachedPath.empty()) {
         return e.cachedPath.front();
     }
     
     // Sin camino, quedarse en lugar
-    return { e.r, e.c };
+    return {e.r, e.c};
 }
 
-// CAMBIO: Mantener función original para compatibilidad (pero no se usa en el loop principal)
+// Mantener compatibilidad con función anterior
 static Point GetNextStepBFS(int startR, int startC, int targetR, int targetC) {
-    std::vector<Point> path = ComputeFullPathBFS(startR, startC, targetR, targetC);
-    if (!path.empty()) {
-        return path.front();
-    }
-    return { startR, startC };
+    // Redirigir a A*
+    Enemy tempEnemy;
+    tempEnemy.r = startR;
+    tempEnemy.c = startC;
+    tempEnemy.lastPlayerR = -1;
+    tempEnemy.lastPlayerC = -1;
+    tempEnemy.lastEnemyR = startR;
+    tempEnemy.lastEnemyC = startC;
+    tempEnemy.pathRecalcTimer = 999.0f; // Forzar recálculo
+    
+    return GetNextStepAStar(tempEnemy, targetR, targetC, 0.0f);
 }
 
 static void SpawnEnemies(glm::vec3 playerPos) {
@@ -1375,15 +1552,14 @@ int main() {
             }
         }
 
-        // ================= ACTUALIZAR ENEMIGOS (IA) =================
-        // CAMBIO: Usar BFS optimizado con caché
+        // ================= ACTUALIZAR ENEMIGOS (IA con A*) =================
+        // Algoritmo A* optimizado con persecución inteligente
         Point playerGrid = WorldToCell(camera.Position);
 
         Enemy* enemies[] = { &enemy1/*, &enemy2*/};
         for (Enemy* e : enemies) {
-            // CAMBIO: Usar función con caché en lugar de BFS directo cada frame
-            // 1. Calcular siguiente casilla ideal con BFS CACHEADO
-            Point nextCell = GetNextStepBFS_Cached(*e, playerGrid.r, playerGrid.c, deltaTime);
+            // Usar A* optimizado con caché y persecución directa
+            Point nextCell = GetNextStepAStar(*e, playerGrid.r, playerGrid.c, deltaTime);
 
             // 2. Obtener posición world del centro de esa casilla
             glm::vec3 targetWorld = CellToWorld(nextCell.r, nextCell.c);
@@ -1412,7 +1588,7 @@ int main() {
             if (glm::distance(e->pos, targetWorld) < 0.1f) {
                 e->r = nextCell.r;
                 e->c = nextCell.c;
-                // CAMBIO: Remover el paso completado del caché
+                // Remover el paso completado del caché
                 if (!e->cachedPath.empty() && 
                     e->cachedPath.front().r == e->r && e->cachedPath.front().c == e->c) {
                     e->cachedPath.erase(e->cachedPath.begin());

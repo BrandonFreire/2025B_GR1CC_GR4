@@ -138,8 +138,12 @@
     <None Include="shaders\B2T3.vs" />
     <None Include="shaders\light_cube.fs" />
     <None Include="shaders\light_cube.vs" />
+    <None Include="shaders\minimap.fs" />
+    <None Include="shaders\minimap.vs" />
     <None Include="shaders\model_loading.fs" />
     <None Include="shaders\model_loading.vs" />
+    <None Include="shaders\screen.fs" />
+    <None Include="shaders\screen.vs" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="model\xenomorph\MI_K33Arms007_baseColor.png" />

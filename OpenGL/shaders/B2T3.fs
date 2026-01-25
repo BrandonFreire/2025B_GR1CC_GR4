@@ -26,6 +26,13 @@ uniform bool useWorldUV;
 uniform vec2 worldTexScale; // scaling applied to world uv (horiz, vert)
 uniform vec2 worldTexOffset; // offset for world uv (horiz, vert)
 
+// ===== LUCES DE ANTORCHA (cubos coleccionables) =====
+#define MAX_TORCH_LIGHTS 10
+uniform int numTorchLights;
+uniform vec3 torchPositions[MAX_TORCH_LIGHTS];
+uniform vec3 torchColor;
+uniform float torchIntensity;
+
 void main()
 {
     // --- COMPUTE UV ---
@@ -96,6 +103,31 @@ void main()
         vec3 specularSpot = vec3(1.0,0.98,0.9) * specSpot * intensity * attenuation *0.8;
 
         result += diffuseSpot + specularSpot;
+    }
+
+    // ===== LUCES DE ANTORCHA (cubos coleccionables) =====
+    for(int i = 0; i < numTorchLights && i < MAX_TORCH_LIGHTS; i++)
+    {
+        vec3 torchPos = torchPositions[i];
+        vec3 fragToTorch = normalize(torchPos - FragPos);
+        float dist = length(torchPos - FragPos);
+
+        // Atenuación cuadrática para luz de antorcha (alcance ~8-10 unidades)
+        float attenuation = 1.0 / (1.0 + 0.14 * dist + 0.07 * dist * dist);
+
+        // Difusa bilateral (ilumina ambos lados)
+        float diffTorch = abs(dot(norm, fragToTorch));
+        diffTorch = max(diffTorch, 0.1);
+
+        // Color de fuego con intensidad variable
+        vec3 torchDiffuse = diffTorch * torchColor * attenuation * torchIntensity;
+
+        // Especular suave para el brillo
+        vec3 reflectTorch = reflect(-fragToTorch, norm);
+        float specTorch = pow(max(dot(viewDir, reflectTorch), 0.0), 16.0);
+        vec3 torchSpecular = torchColor * specTorch * attenuation * torchIntensity * 0.5;
+
+        result += torchDiffuse + torchSpecular;
     }
 
     // --- SALIDA FINAL ---

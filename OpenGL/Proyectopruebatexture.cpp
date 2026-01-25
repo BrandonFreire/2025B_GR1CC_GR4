@@ -1307,7 +1307,7 @@ int main() {
         // Pasar las matrices de huesos al shader
         xenomorphShader.setBool("useAnimation", true);
         auto transforms = animator.GetFinalBoneMatrices();
-        for (int i = 0; i < transforms.size(); ++i) {
+        for (int i = 0; i < transforms.size() && i < 250; ++i) {
             xenomorphShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", transforms[i]);
         }
 

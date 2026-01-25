@@ -43,7 +43,7 @@ struct Enemy {
 };
 
 // Variables globales para los enemigos
-Enemy enemy1, enemy2;
+Enemy enemy1;//, enemy2;
 
 // ================= CONFIG =================
 // prototipos colisión (para que processInput los vea)
@@ -457,7 +457,7 @@ static void SpawnEnemies(glm::vec3 playerPos) {
                     spawnedCount++;
                 }
                 // Configurar enemigo 2 (verificar que no esté cerca del 1)
-                else if (spawnedCount == 1) {
+                /*else if (spawnedCount == 1) {
                     float dEnemy1 = glm::distance(glm::vec2(r, c), glm::vec2(enemy1.r, enemy1.c));
                     if (dEnemy1 > 5) { // Separados al menos 5 casillas
                         enemy2.r = r; enemy2.c = c;
@@ -465,7 +465,7 @@ static void SpawnEnemies(glm::vec3 playerPos) {
                         spawnedCount++;
                         break;
                     }
-                }
+                }*/
             }
         }
     }
@@ -611,17 +611,17 @@ int main() {
     // USAR UN SHADER ESTÁNDAR PARA MODELOS 3D
     // (Asegúrate de tener "model_loading.vs" y "model_loading.fs" en tu carpeta shaders,
     //  son los shaders por defecto de LearnOpenGL para modelos).
-    Shader alienShader("shaders/model_loading.vs", "shaders/model_loading.fs");
+    Shader xenomorphShader("shaders/model_loading.vs", "shaders/model_loading.fs");
 
     // CARGAR EL MODELO DEL ALIEN
     // La ruta debe coincidir con tu carpeta: model -> alien -> scene.gltf
-    Model alienModel("model/alien/Alien.gltf");
+    Model xenomorphModel("model/xenomorph/xenomorph.gltf");
 
     // CARGAR LA ANIMACIÓN (usa el mismo archivo GLTF)
-    Animation alienAnimation("model/alien/Alien.gltf", &alienModel);
+    Animation xenomorphAnimation("model/xenomorph/xenomorph.gltf", &xenomorphModel);
 
     // CREAR EL ANIMATOR
-    Animator animator(&alienAnimation);
+    Animator animator(&xenomorphAnimation);
 
     // ================= LOOP =================
     while (!glfwWindowShouldClose(window)) {
@@ -765,7 +765,7 @@ int main() {
         // Haremos que recalcule el camino frame a frame hacia el centro de la siguiente celda
         Point playerGrid = WorldToCell(camera.Position);
 
-        Enemy* enemies[] = { &enemy1, &enemy2 };
+        Enemy* enemies[] = { &enemy1/*, &enemy2*/};
         for (Enemy* e : enemies) {
             // 1. Calcular siguiente casilla ideal con BFS
             Point nextCell = GetNextStepBFS(e->r, e->c, playerGrid.r, playerGrid.c);
@@ -803,21 +803,21 @@ int main() {
         // ================= DIBUJAR ENEMIGOS =================
         animator.UpdateAnimation(deltaTime);
 
-        alienShader.use();
+        xenomorphShader.use();
 
         // Matrices básicas
-        alienShader.setMat4("projection", projection);
-        alienShader.setMat4("view", view);
+        xenomorphShader.setMat4("projection", projection);
+        xenomorphShader.setMat4("view", view);
 
         // Configuración de Luz
-        alienShader.setVec3("lightPos", lightPos);
-        alienShader.setVec3("viewPos", camera.Position);
+        xenomorphShader.setVec3("lightPos", lightPos);
+        xenomorphShader.setVec3("viewPos", camera.Position);
 
         // Pasar las matrices de huesos al shader
-        alienShader.setBool("useAnimation", true);
+        xenomorphShader.setBool("useAnimation", true);
         auto transforms = animator.GetFinalBoneMatrices();
         for (int i = 0; i < transforms.size(); ++i) {
-            alienShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", transforms[i]);
+            xenomorphShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", transforms[i]);
         }
 
         for (Enemy* e : enemies) {
@@ -832,10 +832,10 @@ int main() {
             //model = glm::rotate(model, (float)e->rotation + glm::pi<float>(), glm::vec3(0.0f, 1.0f, 0.0f));
 
             // Escalar
-            model = glm::scale(model, glm::vec3(0.4f));
+            model = glm::scale(model, glm::vec3(1.5f));
 
-            alienShader.setMat4("model", model);
-            alienModel.Draw(alienShader);
+            xenomorphShader.setMat4("model", model);
+            xenomorphModel.Draw(xenomorphShader);
         }
 
         // ===== CUBO LUZ =====

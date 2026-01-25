@@ -132,8 +132,8 @@
     <ClCompile Include="Proyectopruebatexture.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="model\alien\scene.bin" />
-    <None Include="model\alien\scene.gltf" />
+    <None Include="model\xenomorph\xenomorph.bin" />
+    <None Include="model\xenomorph\xenomorph.gltf" />
     <None Include="shaders\B2T3.fs" />
     <None Include="shaders\B2T3.vs" />
     <None Include="shaders\light_cube.fs" />
@@ -142,16 +142,24 @@
     <None Include="shaders\model_loading.vs" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="model\alien\alien_u0v0_baseColor.png" />
-    <Image Include="model\alien\alien_u0v0_metallicRoughness.png" />
-    <Image Include="model\alien\alien_u0v0_normal.png" />
-    <Image Include="model\alien\alien_u0v1_baseColor.png" />
-    <Image Include="model\alien\alien_u0v1_metallicRoughness.png" />
-    <Image Include="model\alien\alien_u0v1_normal.png" />
-    <Image Include="model\alien\alien_u0v2_baseColor.png" />
-    <Image Include="model\alien\alien_u0v2_metallicRoughness.png" />
-    <Image Include="model\alien\alien_u0v2_normal.png" />
-    <Image Include="model\alien\alien_u0v2_transmission.png" />
+    <Image Include="model\xenomorph\MI_K33Arms007_baseColor.png" />
+    <Image Include="model\xenomorph\MI_K33Arms007_normal.jpeg" />
+    <Image Include="model\xenomorph\MI_K33Arms007_normal.jpg" />
+    <Image Include="model\xenomorph\MI_K33Body007_baseColor.png" />
+    <Image Include="model\xenomorph\MI_K33Body007_normal.jpeg" />
+    <Image Include="model\xenomorph\MI_K33Body007_normal.jpg" />
+    <Image Include="model\xenomorph\MI_K33Head007_baseColor.png" />
+    <Image Include="model\xenomorph\MI_K33Head007_normal.jpeg" />
+    <Image Include="model\xenomorph\MI_K33Head007_normal.jpg" />
+    <Image Include="model\xenomorph\MI_K33Head01_baseColor.png" />
+    <Image Include="model\xenomorph\MI_K33Head01_normal.jpeg" />
+    <Image Include="model\xenomorph\MI_K33Head01_normal.jpg" />
+    <Image Include="model\xenomorph\MI_K33Legs007_baseColor.png" />
+    <Image Include="model\xenomorph\MI_K33Legs007_normal.jpeg" />
+    <Image Include="model\xenomorph\MI_K33Legs007_normal.jpg" />
+    <Image Include="model\xenomorph\MI_K33Tail007_baseColor.png" />
+    <Image Include="model\xenomorph\MI_K33Tail007_normal.jpeg" />
+    <Image Include="model\xenomorph\MI_K33Tail007_normal.jpg" />
     <Image Include="textures\Finalpa1.png" />
     <Image Include="textures\Finalpa2.png" />
     <Image Include="textures\gradas1.png" />

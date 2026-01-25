@@ -22,8 +22,8 @@
     <Filter Include="Archivos de origen\model">
       <UniqueIdentifier>{15185cd1-09db-4104-9d1a-9d6b6e279757}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Archivos de origen\model\alien">
-      <UniqueIdentifier>{65c89125-eb25-426d-a61f-cbf3bb84f38a}</UniqueIdentifier>
+    <Filter Include="Archivos de origen\model\xenomorph">
+      <UniqueIdentifier>{0772609d-dbb6-4b86-9d02-9b7244f56b41}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -47,17 +47,17 @@
     <None Include="shaders\light_cube.fs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
-    <None Include="model\alien\scene.bin">
-      <Filter>Archivos de origen\model\alien</Filter>
-    </None>
     <None Include="shaders\model_loading.vs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
     <None Include="shaders\model_loading.fs">
       <Filter>Archivos de origen\shaders</Filter>
     </None>
-    <None Include="model\alien\scene.gltf">
-      <Filter>Archivos de origen\model\alien</Filter>
+    <None Include="model\xenomorph\xenomorph.bin">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
+    </None>
+    <None Include="model\xenomorph\xenomorph.gltf">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -103,35 +103,59 @@
     <Image Include="textures\TextruaP2.png">
       <Filter>Archivos de origen\textures</Filter>
     </Image>
-    <Image Include="model\alien\alien_u0v0_baseColor.png">
-      <Filter>Archivos de origen\model\alien</Filter>
+    <Image Include="model\xenomorph\MI_K33Arms007_baseColor.png">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
     </Image>
-    <Image Include="model\alien\alien_u0v0_metallicRoughness.png">
-      <Filter>Archivos de origen\model\alien</Filter>
+    <Image Include="model\xenomorph\MI_K33Arms007_normal.jpeg">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
     </Image>
-    <Image Include="model\alien\alien_u0v0_normal.png">
-      <Filter>Archivos de origen\model\alien</Filter>
+    <Image Include="model\xenomorph\MI_K33Arms007_normal.jpg">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
     </Image>
-    <Image Include="model\alien\alien_u0v1_baseColor.png">
-      <Filter>Archivos de origen\model\alien</Filter>
+    <Image Include="model\xenomorph\MI_K33Body007_baseColor.png">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
     </Image>
-    <Image Include="model\alien\alien_u0v1_metallicRoughness.png">
-      <Filter>Archivos de origen\model\alien</Filter>
+    <Image Include="model\xenomorph\MI_K33Body007_normal.jpeg">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
     </Image>
-    <Image Include="model\alien\alien_u0v1_normal.png">
-      <Filter>Archivos de origen\model\alien</Filter>
+    <Image Include="model\xenomorph\MI_K33Body007_normal.jpg">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
     </Image>
-    <Image Include="model\alien\alien_u0v2_baseColor.png">
-      <Filter>Archivos de origen\model\alien</Filter>
+    <Image Include="model\xenomorph\MI_K33Head01_baseColor.png">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
     </Image>
-    <Image Include="model\alien\alien_u0v2_metallicRoughness.png">
-      <Filter>Archivos de origen\model\alien</Filter>
+    <Image Include="model\xenomorph\MI_K33Head01_normal.jpeg">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
     </Image>
-    <Image Include="model\alien\alien_u0v2_normal.png">
-      <Filter>Archivos de origen\model\alien</Filter>
+    <Image Include="model\xenomorph\MI_K33Head01_normal.jpg">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
     </Image>
-    <Image Include="model\alien\alien_u0v2_transmission.png">
-      <Filter>Archivos de origen\model\alien</Filter>
+    <Image Include="model\xenomorph\MI_K33Head007_baseColor.png">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
+    </Image>
+    <Image Include="model\xenomorph\MI_K33Head007_normal.jpeg">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
+    </Image>
+    <Image Include="model\xenomorph\MI_K33Head007_normal.jpg">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
+    </Image>
+    <Image Include="model\xenomorph\MI_K33Legs007_baseColor.png">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
+    </Image>
+    <Image Include="model\xenomorph\MI_K33Legs007_normal.jpeg">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
+    </Image>
+    <Image Include="model\xenomorph\MI_K33Legs007_normal.jpg">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
+    </Image>
+    <Image Include="model\xenomorph\MI_K33Tail007_baseColor.png">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
+    </Image>
+    <Image Include="model\xenomorph\MI_K33Tail007_normal.jpeg">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
+    </Image>
+    <Image Include="model\xenomorph\MI_K33Tail007_normal.jpg">
+      <Filter>Archivos de origen\model\xenomorph</Filter>
     </Image>
   </ItemGroup>
   <ItemGroup>

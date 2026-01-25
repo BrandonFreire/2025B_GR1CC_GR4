@@ -59,6 +59,18 @@
     <None Include="model\xenomorph\xenomorph.gltf">
       <Filter>Archivos de origen\model\xenomorph</Filter>
     </None>
+    <None Include="shaders\screen.fs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\screen.vs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\minimap.fs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="shaders\minimap.vs">
+      <Filter>Archivos de origen\shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Image Include="textures\Finalpa1.png">

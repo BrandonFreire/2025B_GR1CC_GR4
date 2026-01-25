@@ -1099,46 +1099,6 @@ void ResetGame() {
     SpawnCollectibles(camera.Position);
 }
 
-// ================= TEXTURAS =================
-// simple texture loader (usable for start screen and map textures)
-static unsigned int loadTexture(const char* path, bool flip = true) {
-    unsigned int id;
-    glGenTextures(1, &id);
-
-    int w, h, c;
-    stbi_set_flip_vertically_on_load(flip);
-    unsigned char* data = stbi_load(path, &w, &h, &c, 0);
-    if (!data) {
-        // Retry without ../
-        std::string sPath = path;
-        if (sPath.size() > 3 && sPath.substr(0, 3) == "../") {
-            std::string fallback = sPath.substr(3);
-            data = stbi_load(fallback.c_str(), &w, &h, &c, 0);
-        }
-    }
-
-    if (data) {
-        GLenum format = GL_RGB;
-        if (c == 1) format = GL_RED;
-        else if (c == 3) format = GL_RGB;
-        else if (c == 4) format = GL_RGBA;
-
-        glBindTexture(GL_TEXTURE_2D, id);
-        glTexImage2D(GL_TEXTURE_2D, 0, format, w, h, 0, format, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    }
-    else {
-        std::cout << "Texture failed to load at path: " << path << std::endl;
-    }
-    stbi_image_free(data);
-    return id;
-}
-
 // ================= MAIN =================
 
 int main() {

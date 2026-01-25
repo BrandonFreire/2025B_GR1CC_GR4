@@ -1575,6 +1575,21 @@ int main() {
         xenomorphShader.setVec3("lightPos", lightPos);
         xenomorphShader.setVec3("viewPos", camera.Position);
 
+        // ===== PASAR LINTERNA AL SHADER DEL XENOMORPH =====
+        xenomorphShader.setBool("linterna", linternaEncendida);
+        if (linternaEncendida) {
+            xenomorphShader.setVec3("spotLightPos", camera.Position);
+            xenomorphShader.setVec3("spotLightDir", camera.Front);
+            xenomorphShader.setFloat("spotCutOff", glm::cos(glm::radians(15.0f)));
+            xenomorphShader.setFloat("spotOuterCutOff", glm::cos(glm::radians(25.0f)));
+        }
+        else {
+            xenomorphShader.setVec3("spotLightPos", glm::vec3(0.0f));
+            xenomorphShader.setVec3("spotLightDir", glm::vec3(0.0f, 0.0f, -1.0f));
+            xenomorphShader.setFloat("spotCutOff", 0.0f);
+            xenomorphShader.setFloat("spotOuterCutOff", 0.0f);
+        }
+
         // Pasar las matrices de huesos al shader (OPTIMIZADO: usando uniform locations cacheados)
         xenomorphShader.setBool("useAnimation", true);
         auto transforms = animator.GetFinalBoneMatrices();

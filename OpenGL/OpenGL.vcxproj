@@ -180,7 +180,6 @@
     <Image Include="textures\TextruaP2.png" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="D:\Descargas U\maze.txt" />
     <Text Include="textures\notas.txt.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

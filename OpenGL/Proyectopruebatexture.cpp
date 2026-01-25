@@ -829,10 +829,9 @@ int main() {
 
             // Rotar hacia la dirección de movimiento (necesitas agregar e->rotation)
             model = glm::rotate(model, e->rotation, glm::vec3(0.0f, 1.0f, 0.0f));
-            //model = glm::rotate(model, (float)e->rotation + glm::pi<float>(), glm::vec3(0.0f, 1.0f, 0.0f));
 
             // Escalar
-            model = glm::scale(model, glm::vec3(1.5f));
+            model = glm::scale(model, glm::vec3(1.3f));
 
             xenomorphShader.setMat4("model", model);
             xenomorphModel.Draw(xenomorphShader);

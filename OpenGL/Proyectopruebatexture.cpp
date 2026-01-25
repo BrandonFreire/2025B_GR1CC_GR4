@@ -7,7 +7,6 @@
 // utilicen la tarjeta gráfica dedicada en lugar de la integrada.
 #ifdef _WIN32
 extern "C" {
-    // Para NVIDIA Optimus
     __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
 }
 #endif

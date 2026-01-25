@@ -2,6 +2,16 @@
 // Lee un archivo maze.txt (0 = vacío, 1 = suelo, E = salida)
 // Requiere B2T3.fs con uniform vec3 baseColor (sin samplear texture1).
 
+// ===================== FORZAR GPU DEDICADA =====================
+// Estas exportaciones indican a los drivers de NVIDIA y AMD que
+// utilicen la tarjeta gráfica dedicada en lugar de la integrada.
+#ifdef _WIN32
+extern "C" {
+    // Para NVIDIA Optimus
+    __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
+}
+#endif
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 

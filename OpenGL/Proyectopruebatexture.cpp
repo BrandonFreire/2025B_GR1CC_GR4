@@ -40,6 +40,10 @@ extern "C" {
 struct Point { int r, c; };
 
 // Estructura del Enemigo
+bool gameOver = false;
+unsigned int gameOverTex = 0;
+const float ENEMY_KILL_RADIUS = 0.8f;
+
 struct Enemy {
     glm::vec3 pos;      // Posición suave (interpolada) en el mundo
     int r, c;           // Posición lógica actual en el grid
@@ -85,7 +89,8 @@ const unsigned int SCR_HEIGHT = 1080;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 const float CELL_EPS = 1e-4f;   // epsilon contra errores de float
-
+bool gameWin = false;
+unsigned int gameWinTex = 0;
 
 // ================= ESCALA =================
 // Se calcula MAP_W/MAP_H desde el TXT. TILE mantiene tamaño similar a tu ROOM_SIZE (~30).
@@ -441,13 +446,13 @@ static int bfsQueueHead = 0, bfsQueueTail = 0;
 static bool pathfindBuffersInit = false;
 
 // Direcciones de movimiento (arriba, abajo, izquierda, derecha)
-static const int DIR_R[] = {-1, 1, 0, 0};
-static const int DIR_C[] = {0, 0, -1, 1};
+static const int DIR_R[] = { -1, 1, 0, 0 };
+static const int DIR_C[] = { 0, 0, -1, 1 };
 
 // ===== INICIALIZACIÓN DE BUFFERS (una sola vez) =====
 static void InitPathfindBuffers() {
     if (pathfindBuffersInit && (int)bfsDistance.size() == MAP_H) return;
-    
+
     bfsDistance.assign(MAP_H, std::vector<int>(MAP_W, -1));
     bfsVisited.assign(MAP_H, std::vector<bool>(MAP_W, false));
     bfsQueue.resize(MAP_H * MAP_W); // Pre-allocar para el peor caso
@@ -460,7 +465,7 @@ static void ResetBFSBuffers(int centerR, int centerC, int radius) {
     int maxR = std::min(MAP_H - 1, centerR + radius);
     int minC = std::max(0, centerC - radius);
     int maxC = std::min(MAP_W - 1, centerC + radius);
-    
+
     for (int r = minR; r <= maxR; r++) {
         for (int c = minC; c <= maxC; c++) {
             bfsDistance[r][c] = -1;
@@ -512,35 +517,36 @@ static void InitAStarBuffers() {
 // Esto elimina los bucles while y búsquedas repetidas en cada frame
 
 // Estructura para segmentos de textura indie (definida globalmente)
-struct IndieSeg { 
-    int startR; 
-    int startC; 
+struct IndieSeg {
+    int startR;
+    int startC;
     int dir;  // dir:0=horizontal, 1=vertical
-    int len; 
+    int len;
 };
 
 static std::vector<IndieSeg> g_indieSegs; // Referencia global para indie segments
 
 static void PrecomputeWallTextures() {
     if (wallTextureCacheInit) return;
-    
+
     wallTextureCache.assign(MAP_H, std::vector<std::array<WallInfo, 4>>(MAP_W));
-    
+
     for (int r = 0; r < MAP_H; r++) {
         for (int c = 0; c < MAP_W; c++) {
             if (!IsFloor(r, c)) continue;
-            
+
             // Direcciones: 0=Norte, 1=Sur, 2=Oeste, 3=Este
             // Norte (r-1)
             if (!InBounds(r - 1, c) || IsWall(r - 1, c)) {
                 int nr = r - 1, nc = c;
                 int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
                 WallInfo& info = wallTextureCache[r][c][0];
-                
+
                 if (t == 2) {
                     info.textureIndex = 6; // wallRoomTex
                     info.flipTexY = false;
-                } else {
+                }
+                else {
                     bool isIndie = false;
                     int chosen = 0;
                     for (const auto& s : g_indieSegs) {
@@ -552,7 +558,8 @@ static void PrecomputeWallTextures() {
                     }
                     if (isIndie) {
                         info.textureIndex = (chosen == 0) ? 7 : 8; // wallindie1 o wallindie2
-                    } else {
+                    }
+                    else {
                         int startC = nc;
                         while (startC - 1 >= 0 && IsFloor(r, startC - 1) && IsWall(r - 1, startC - 1)) startC--;
                         int offset = nc - startC;
@@ -561,17 +568,18 @@ static void PrecomputeWallTextures() {
                     info.flipTexY = true;
                 }
             }
-            
+
             // Sur (r+1)
             if (!InBounds(r + 1, c) || IsWall(r + 1, c)) {
                 int nr = r + 1, nc = c;
                 int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
                 WallInfo& info = wallTextureCache[r][c][1];
-                
+
                 if (t == 2) {
                     info.textureIndex = 6;
                     info.flipTexY = false;
-                } else {
+                }
+                else {
                     bool isIndie = false;
                     int chosen = 0;
                     for (const auto& s : g_indieSegs) {
@@ -583,7 +591,8 @@ static void PrecomputeWallTextures() {
                     }
                     if (isIndie) {
                         info.textureIndex = (chosen == 0) ? 7 : 8;
-                    } else {
+                    }
+                    else {
                         int startC = nc;
                         while (startC - 1 >= 0 && IsFloor(r, startC - 1) && IsWall(r + 1, startC - 1)) startC--;
                         int offset = nc - startC;
@@ -592,17 +601,18 @@ static void PrecomputeWallTextures() {
                     info.flipTexY = true;
                 }
             }
-            
+
             // Oeste (c-1)
             if (!InBounds(r, c - 1) || IsWall(r, c - 1)) {
                 int nr = r, nc = c - 1;
                 int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
                 WallInfo& info = wallTextureCache[r][c][2];
-                
+
                 if (t == 2) {
                     info.textureIndex = 6;
                     info.flipTexY = false;
-                } else {
+                }
+                else {
                     bool isIndie = false;
                     int chosen = 0;
                     for (const auto& s : g_indieSegs) {
@@ -614,7 +624,8 @@ static void PrecomputeWallTextures() {
                     }
                     if (isIndie) {
                         info.textureIndex = (chosen == 0) ? 7 : 8;
-                    } else {
+                    }
+                    else {
                         int startR = nr;
                         while (startR - 1 >= 0 && IsFloor(startR - 1, c) && IsWall(startR - 1, c - 1)) startR--;
                         int offset = nr - startR;
@@ -623,17 +634,18 @@ static void PrecomputeWallTextures() {
                     info.flipTexY = true;
                 }
             }
-            
+
             // Este (c+1)
             if (!InBounds(r, c + 1) || IsWall(r, c + 1)) {
                 int nr = r, nc = c + 1;
                 int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
                 WallInfo& info = wallTextureCache[r][c][3];
-                
+
                 if (t == 2) {
                     info.textureIndex = 6;
                     info.flipTexY = false;
-                } else {
+                }
+                else {
                     bool isIndie = false;
                     int chosen = 0;
                     for (const auto& s : g_indieSegs) {
@@ -645,7 +657,8 @@ static void PrecomputeWallTextures() {
                     }
                     if (isIndie) {
                         info.textureIndex = (chosen == 0) ? 7 : 8;
-                    } else {
+                    }
+                    else {
                         int startR = nr;
                         while (startR - 1 >= 0 && IsFloor(startR - 1, c) && IsWall(startR - 1, c + 1)) startR--;
                         int offset = nr - startR;
@@ -656,7 +669,7 @@ static void PrecomputeWallTextures() {
             }
         }
     }
-    
+
     wallTextureCacheInit = true;
     std::cout << "Wall texture cache inicializado para " << MAP_H << "x" << MAP_W << " celdas\n";
 }
@@ -671,37 +684,37 @@ static unsigned int g_allTextures[9]; // 0-5: hall, 6: room, 7-8: indie, + floor
 
 static void BuildMazeGeometry() {
     if (mazeBatchesInit) return;
-    
+
     // Limpiar batches anteriores
     for (auto& batch : mazeBatches) {
         if (batch.VAO) glDeleteVertexArrays(1, &batch.VAO);
         if (batch.VBO) glDeleteBuffers(1, &batch.VBO);
     }
     mazeBatches.clear();
-    
+
     // Recopilar vértices por textura (índices 0-8 para paredes, 9 para suelo, 10 para techo)
     std::vector<std::vector<float>> verticesByTexture(11);
-    
+
     // Función lambda para agregar un quad de suelo/techo
     // Genera un quad horizontal en la posición (x, z) a altura y
     auto addFloorQuad = [](std::vector<float>& verts, float x, float z, float y, float nx, float ny, float nz) {
         float halfT = TILE * 0.5f;
-        
+
         // Esquinas del quad (visto desde arriba)
         // Para suelo (ny > 0): normal apunta hacia arriba
         // Para techo (ny < 0): normal apunta hacia abajo
-        
+
         // Triángulo 1: esquina inferior-izquierda -> superior-izquierda -> superior-derecha
-        verts.insert(verts.end(), {x - halfT, y, z - halfT, nx, ny, nz, 0.0f, 0.0f});
-        verts.insert(verts.end(), {x + halfT, y, z - halfT, nx, ny, nz, 1.0f, 0.0f});
-        verts.insert(verts.end(), {x + halfT, y, z + halfT, nx, ny, nz, 1.0f, 1.0f});
-        
+        verts.insert(verts.end(), { x - halfT, y, z - halfT, nx, ny, nz, 0.0f, 0.0f });
+        verts.insert(verts.end(), { x + halfT, y, z - halfT, nx, ny, nz, 1.0f, 0.0f });
+        verts.insert(verts.end(), { x + halfT, y, z + halfT, nx, ny, nz, 1.0f, 1.0f });
+
         // Triángulo 2
-        verts.insert(verts.end(), {x + halfT, y, z + halfT, nx, ny, nz, 1.0f, 1.0f});
-        verts.insert(verts.end(), {x - halfT, y, z + halfT, nx, ny, nz, 0.0f, 1.0f});
-        verts.insert(verts.end(), {x - halfT, y, z - halfT, nx, ny, nz, 0.0f, 0.0f});
-    };
-    
+        verts.insert(verts.end(), { x + halfT, y, z + halfT, nx, ny, nz, 1.0f, 1.0f });
+        verts.insert(verts.end(), { x - halfT, y, z + halfT, nx, ny, nz, 0.0f, 1.0f });
+        verts.insert(verts.end(), { x - halfT, y, z - halfT, nx, ny, nz, 0.0f, 0.0f });
+        };
+
     // Función lambda para agregar un quad de pared
     // Replica exactamente el orden y UVs del wallVertices original
     // wallVertices original: UV(0,1) en bottom-left, UV(1,0) en top-right
@@ -709,105 +722,105 @@ static void BuildMazeGeometry() {
     auto addWallQuad = [](std::vector<float>& verts, glm::vec3 pos, float rotY, float w, float h, glm::vec3 normal, bool flipY) {
         float halfW = w * 0.5f;
         float cosR = cos(rotY), sinR = sin(rotY);
-        
+
         // Vector "right" en el plano XZ (perpendicular a la normal)
         glm::vec3 right = glm::vec3(cosR, 0.0f, sinR) * halfW;
-        
+
         // Las 4 esquinas del quad
         glm::vec3 bl = pos - right;                          // Bottom-left
         glm::vec3 br = pos + right;                          // Bottom-right
         glm::vec3 tl = bl + glm::vec3(0.0f, h, 0.0f);        // Top-left
         glm::vec3 tr = br + glm::vec3(0.0f, h, 0.0f);        // Top-right
-        
+
         // Coordenadas UV - orden original del wallVertices:
         // bottom-left = (0, 1), bottom-right = (1, 1)
         // top-left = (0, 0), top-right = (1, 0)
         // Si flipY=true, invertimos V: bottom usa V=0, top usa V=1
         float vBottom = flipY ? 0.0f : 1.0f;
         float vTop = flipY ? 1.0f : 0.0f;
-        
+
         // Triángulo 1: bl -> br -> tr (igual que wallVertices)
-        verts.insert(verts.end(), {bl.x, bl.y, bl.z, normal.x, normal.y, normal.z, 0.0f, vBottom});
-        verts.insert(verts.end(), {br.x, br.y, br.z, normal.x, normal.y, normal.z, 1.0f, vBottom});
-        verts.insert(verts.end(), {tr.x, tr.y, tr.z, normal.x, normal.y, normal.z, 1.0f, vTop});
-        
+        verts.insert(verts.end(), { bl.x, bl.y, bl.z, normal.x, normal.y, normal.z, 0.0f, vBottom });
+        verts.insert(verts.end(), { br.x, br.y, br.z, normal.x, normal.y, normal.z, 1.0f, vBottom });
+        verts.insert(verts.end(), { tr.x, tr.y, tr.z, normal.x, normal.y, normal.z, 1.0f, vTop });
+
         // Triángulo 2: tr -> tl -> bl (igual que wallVertices)
-        verts.insert(verts.end(), {tr.x, tr.y, tr.z, normal.x, normal.y, normal.z, 1.0f, vTop});
-        verts.insert(verts.end(), {tl.x, tl.y, tl.z, normal.x, normal.y, normal.z, 0.0f, vTop});
-        verts.insert(verts.end(), {bl.x, bl.y, bl.z, normal.x, normal.y, normal.z, 0.0f, vBottom});
-    };
-    
+        verts.insert(verts.end(), { tr.x, tr.y, tr.z, normal.x, normal.y, normal.z, 1.0f, vTop });
+        verts.insert(verts.end(), { tl.x, tl.y, tl.z, normal.x, normal.y, normal.z, 0.0f, vTop });
+        verts.insert(verts.end(), { bl.x, bl.y, bl.z, normal.x, normal.y, normal.z, 0.0f, vBottom });
+        };
+
     // Recorrer todo el mapa y construir geometría
     for (int r = 0; r < MAP_H; r++) {
         for (int c = 0; c < MAP_W; c++) {
             if (!IsFloor(r, c)) continue;
-            
+
             glm::vec3 w = CellToWorld(r, c);
-            
+
             // Suelo (textura índice 9)
             addFloorQuad(verticesByTexture[9], w.x, w.z, 0.0f, 0.0f, 1.0f, 0.0f);
-            
+
             // Techo (textura índice 10 - sin textura, color sólido)
             addFloorQuad(verticesByTexture[10], w.x, w.z, WALL_HEIGHT, 0.0f, -1.0f, 0.0f);
-            
+
             // Paredes Norte (dir 0) - mirando hacia -Z (dentro de la celda)
             if (!InBounds(r - 1, c) || IsWall(r - 1, c)) {
                 const WallInfo& info = wallTextureCache[r][c][0];
                 glm::vec3 wallPos = glm::vec3(w.x, 0.0f, w.z + TILE * 0.5f);
                 // Rotación 180° => la pared mira hacia -Z
-                addWallQuad(verticesByTexture[info.textureIndex], wallPos, 
-                           glm::radians(0.0f), TILE, WALL_HEIGHT, 
-                           glm::vec3(0.0f, 0.0f, -1.0f), info.flipTexY);
+                addWallQuad(verticesByTexture[info.textureIndex], wallPos,
+                    glm::radians(0.0f), TILE, WALL_HEIGHT,
+                    glm::vec3(0.0f, 0.0f, -1.0f), info.flipTexY);
             }
-            
+
             // Paredes Sur (dir 1) - mirando hacia +Z (dentro de la celda)
             if (!InBounds(r + 1, c) || IsWall(r + 1, c)) {
                 const WallInfo& info = wallTextureCache[r][c][1];
                 glm::vec3 wallPos = glm::vec3(w.x, 0.0f, w.z - TILE * 0.5f);
                 // Sin rotación => la pared mira hacia +Z
-                addWallQuad(verticesByTexture[info.textureIndex], wallPos, 
-                           glm::radians(180.0f), TILE, WALL_HEIGHT, 
-                           glm::vec3(0.0f, 0.0f, 1.0f), info.flipTexY);
+                addWallQuad(verticesByTexture[info.textureIndex], wallPos,
+                    glm::radians(180.0f), TILE, WALL_HEIGHT,
+                    glm::vec3(0.0f, 0.0f, 1.0f), info.flipTexY);
             }
-            
+
             // Paredes Oeste (dir 2) - mirando hacia +X (dentro de la celda)
             if (!InBounds(r, c - 1) || IsWall(r, c - 1)) {
                 const WallInfo& info = wallTextureCache[r][c][2];
                 glm::vec3 wallPos = glm::vec3(w.x - TILE * 0.5f, 0.0f, w.z);
                 // Rotación -90° => la pared mira hacia +X
-                addWallQuad(verticesByTexture[info.textureIndex], wallPos, 
-                           glm::radians(90.0f), TILE, WALL_HEIGHT, 
-                           glm::vec3(1.0f, 0.0f, 0.0f), info.flipTexY);
+                addWallQuad(verticesByTexture[info.textureIndex], wallPos,
+                    glm::radians(90.0f), TILE, WALL_HEIGHT,
+                    glm::vec3(1.0f, 0.0f, 0.0f), info.flipTexY);
             }
-            
+
             // Paredes Este (dir 3) - mirando hacia -X (dentro de la celda)
             if (!InBounds(r, c + 1) || IsWall(r, c + 1)) {
                 const WallInfo& info = wallTextureCache[r][c][3];
                 glm::vec3 wallPos = glm::vec3(w.x + TILE * 0.5f, 0.0f, w.z);
                 // Rotación 90° => la pared mira hacia -X
-                addWallQuad(verticesByTexture[info.textureIndex], wallPos, 
-                           glm::radians(-90.0f), TILE, WALL_HEIGHT, 
-                           glm::vec3(-1.0f, 0.0f, 0.0f), info.flipTexY);
+                addWallQuad(verticesByTexture[info.textureIndex], wallPos,
+                    glm::radians(-90.0f), TILE, WALL_HEIGHT,
+                    glm::vec3(-1.0f, 0.0f, 0.0f), info.flipTexY);
             }
         }
     }
-    
+
     // Crear VAO/VBO para cada grupo de texturas
     for (int i = 0; i < 11; i++) {
         if (verticesByTexture[i].empty()) continue;
-        
+
         MazeBatch batch;
         batch.vertexCount = (int)verticesByTexture[i].size() / 8; // 8 floats per vertex
         batch.textureID = (i < 9) ? g_allTextures[i] : 0; // Para suelo/techo se manejará aparte
-        
+
         glGenVertexArrays(1, &batch.VAO);
         glGenBuffers(1, &batch.VBO);
-        
+
         glBindVertexArray(batch.VAO);
         glBindBuffer(GL_ARRAY_BUFFER, batch.VBO);
-        glBufferData(GL_ARRAY_BUFFER, verticesByTexture[i].size() * sizeof(float), 
-                     verticesByTexture[i].data(), GL_STATIC_DRAW);
-        
+        glBufferData(GL_ARRAY_BUFFER, verticesByTexture[i].size() * sizeof(float),
+            verticesByTexture[i].data(), GL_STATIC_DRAW);
+
         // position
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
         glEnableVertexAttribArray(0);
@@ -817,35 +830,35 @@ static void BuildMazeGeometry() {
         // texcoord
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
         glEnableVertexAttribArray(2);
-        
+
         glBindVertexArray(0);
-        
+
         mazeBatches.push_back(batch);
-        
+
         std::cout << "Batch " << i << ": " << batch.vertexCount << " vertices\n";
     }
-    
+
     mazeBatchesInit = true;
-    std::cout << "Maze geometry batched: " << mazeBatches.size() << " batches (vs ~" 
-              << (MAP_H * MAP_W * 6) << " draw calls antes)\n";
+    std::cout << "Maze geometry batched: " << mazeBatches.size() << " batches (vs ~"
+        << (MAP_H * MAP_W * 6) << " draw calls antes)\n";
 }
 
 // Función para inicializar cache de uniform locations
 static void InitUniformLocations(unsigned int xenomorphShaderID) {
     if (uniformLocsInit) return;
-    
+
     boneMatrixLocs.resize(250);
     for (int i = 0; i < 250; i++) {
         std::string name = "finalBonesMatrices[" + std::to_string(i) + "]";
         boneMatrixLocs[i] = glGetUniformLocation(xenomorphShaderID, name.c_str());
     }
-    
+
     torchPosLocs.resize(8);
     for (int i = 0; i < 8; i++) {
         std::string name = "torchPositions[" + std::to_string(i) + "]";
         torchPosLocs[i] = glGetUniformLocation(xenomorphShaderID, name.c_str());
     }
-    
+
     uniformLocsInit = true;
     std::cout << "Uniform locations cacheados\n";
 }
@@ -1014,9 +1027,7 @@ static void CheckCollectibles(const glm::vec3& playerPos, GLFWwindow* window) {
             }
             else {
                 title = "LABERINTO - HAS RECOGIDO TODOS LOS CUBOS!!!";
-                std::cout << "==============================================\n";
-                std::cout << " HAS RECOGIDO TODOS LOS CUBOS!!! \n";
-                std::cout << "==============================================\n";
+                gameWin = true;   // <<<<<< AQUÍ SE GANA
             }
             if (window) glfwSetWindowTitle(window, title.c_str());
         }
@@ -1061,6 +1072,31 @@ static unsigned int loadTexture(const char* path, bool flip = true) {
     }
     stbi_image_free(data);
     return id;
+}
+// ================= RESET DEL JUEGO =================
+void ResetGame() {
+    // Reset flags
+    gameOver = false;
+    gameWin = false;
+
+    // Reset tiempo (evita deltaTime gigante)
+    lastFrame = (float)glfwGetTime();
+
+    // ===== RESET CAMARA / JUGADOR =====
+    int sr = 0, sc = 0;
+    if (FindSpawn(sr, sc)) {
+        glm::vec3 spawnW = CellToWorld(sr, sc);
+        camera.Position = glm::vec3(spawnW.x, 2.0f, spawnW.z);
+        camera.Yaw = 180.0f;
+        camera.Pitch = 0.0f;
+        camera.ProcessMouseMovement(0, 0);
+    }
+
+    // ===== RESET ENEMIGOS =====
+    SpawnEnemies(camera.Position);
+
+    // ===== RESET COLECCIONABLES =====
+    SpawnCollectibles(camera.Position);
 }
 
 // ================= MAIN =================
@@ -1146,6 +1182,10 @@ int main() {
     glBindVertexArray(0);
 
     unsigned int startTex = loadTexture("textures/portada.png");
+    gameOverTex = loadTexture("textures/gameover.png");
+    gameWinTex = loadTexture("textures/win.png"); 
+
+
     screenShader.use();
     screenShader.setInt("screenTex", 0);
 
@@ -1221,6 +1261,7 @@ int main() {
     // ===== PRE-CALCULAR TEXTURAS Y GEOMETRÍA DEL LABERINTO =====
     PrecomputeWallTextures();
     BuildMazeGeometry();
+  
 
     bool gameStarted = false;
     bool lastEnter = false;
@@ -1394,6 +1435,70 @@ int main() {
             glfwSwapBuffers(window);
             continue;
         }
+        // ===== GAME OVER =====
+        if (gameOver) {
+
+            // ---- REINICIAR CON ENTER ----
+            static bool enterPrev = false;
+            bool enter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
+
+            if (enter && !enterPrev) {
+                ResetGame();   // <<<<<< AQUÍ SE RESETEA TODO
+            }
+            enterPrev = enter;
+
+            // ---- DIBUJAR PANTALLA GAME OVER ----
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            screenShader.use();
+            glBindVertexArray(screenVAO);
+
+            glDisable(GL_DEPTH_TEST);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, gameOverTex);
+
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            glEnable(GL_DEPTH_TEST);
+
+            glfwSwapBuffers(window);
+            continue;   // CRÍTICO
+        }
+        // ===== GAME WIN =====
+        if (gameWin) {
+
+            // ---- REINICIAR CON ENTER ----
+            static bool enterPrevWin = false;
+            bool enter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
+
+            if (enter && !enterPrevWin) {
+                ResetGame();   // mismo reset que Game Over
+                gameWin = false;
+            }
+            enterPrevWin = enter;
+
+            // ---- DIBUJAR PANTALLA WIN ----
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            screenShader.use();
+            glBindVertexArray(screenVAO);
+
+            glDisable(GL_DEPTH_TEST);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, gameWinTex);
+
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            glEnable(GL_DEPTH_TEST);
+
+            glfwSwapBuffers(window);
+            continue;
+        }
+
+
+
 
         float time = (float)glfwGetTime();
         deltaTime = time - lastFrame;
@@ -1481,11 +1586,11 @@ int main() {
         {
             glm::mat4 identity = glm::mat4(1.0f);
             shader.setMat4("model", identity);
-            
+
             int batchIdx = 0;
             for (const auto& batch : mazeBatches) {
                 glBindVertexArray(batch.VAO);
-                
+
                 // Configurar textura según el tipo de batch
                 if (batchIdx < 9) {
                     // Paredes con textura
@@ -1496,7 +1601,8 @@ int main() {
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, batch.textureID);
                     shader.setVec3("baseColor", glm::vec3(1.0f));
-                } else if (batchIdx == 9) {
+                }
+                else if (batchIdx == 9) {
                     // Suelo
                     shader.setBool("useTexture", true);
                     shader.setBool("useWorldUV", false);
@@ -1505,16 +1611,17 @@ int main() {
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, floorRoomTex);
                     shader.setVec3("baseColor", glm::vec3(1.0f));
-                } else {
+                }
+                else {
                     // Techo (sin textura)
                     shader.setBool("useTexture", false);
                     shader.setVec3("baseColor", glm::vec3(0.25f, 0.25f, 0.25f));
                 }
-                
+
                 glDrawArrays(GL_TRIANGLES, 0, batch.vertexCount);
                 batchIdx++;
             }
-            
+
             shader.setBool("useTexture", false);
         }
 
@@ -1522,7 +1629,7 @@ int main() {
         // Algoritmo BFS para pathfinding
         Point playerGrid = WorldToCell(camera.Position);
 
-        Enemy* enemies[] = { &enemy1/*, &enemy2*/};
+        Enemy* enemies[] = { &enemy1/*, &enemy2*/ };
         for (Enemy* e : enemies) {
             // Usar BFS para encontrar el siguiente paso
             Point nextCell = GetNextStepBFS(e->r, e->c, playerGrid.r, playerGrid.c);
@@ -1541,6 +1648,17 @@ int main() {
                 e->animTime += deltaTime * 5.0f;
                 if (e->animTime > 6.28318f) e->animTime -= 6.28318f;
             }
+            for (Enemy* e : enemies) {
+                float d = glm::distance(
+                    glm::vec2(camera.Position.x, camera.Position.z),
+                    glm::vec2(e->pos.x, e->pos.z)
+                );
+
+                if (d < ENEMY_KILL_RADIUS) {
+                    gameOver = true;
+                    break;
+                }
+            }
 
             // SIEMPRE calcular la rotación hacia el jugador (no hacia donde se mueve)
             glm::vec3 dirToPlayer = camera.Position - e->pos;
@@ -1555,7 +1673,7 @@ int main() {
                 e->r = nextCell.r;
                 e->c = nextCell.c;
                 // Remover el paso completado del caché
-                if (!e->cachedPath.empty() && 
+                if (!e->cachedPath.empty() &&
                     e->cachedPath.front().r == e->r && e->cachedPath.front().c == e->c) {
                     e->cachedPath.erase(e->cachedPath.begin());
                 }
@@ -1677,11 +1795,11 @@ int main() {
                 {
                     glm::vec3 coreColor = glm::vec3(1.0f, 0.9f, 0.5f) * torchFlicker * pulse * 2.0f;
                     float coreScale = 0.12f + 0.02f * sin(t * 20.0f);
-                    
+
                     glm::mat4 model = glm::mat4(1.0f);
                     model = glm::translate(model, col.pos + glm::vec3(xOffset, yOffset + 0.1f, zOffset));
                     model = glm::scale(model, glm::vec3(coreScale));
-                    
+
                     shader.setMat4("model", model);
                     shader.setVec3("baseColor", coreColor);
                     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -1691,11 +1809,11 @@ int main() {
                 {
                     glm::vec3 flameColor = baseFireColor * torchFlicker * pulse * 1.5f;
                     float flameScale = 0.18f + 0.03f * sin(t * 12.0f + col.pos.z);
-                    
+
                     glm::mat4 model = glm::mat4(1.0f);
                     model = glm::translate(model, col.pos + glm::vec3(xOffset * 0.5f, yOffset, zOffset * 0.5f));
                     model = glm::scale(model, glm::vec3(flameScale));
-                    
+
                     shader.setMat4("model", model);
                     shader.setVec3("baseColor", flameColor);
                     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -1705,11 +1823,11 @@ int main() {
                 {
                     glm::vec3 glowColor = glm::vec3(1.0f, 0.4f, 0.1f) * torchFlicker * 0.4f;
                     float glowScale = 0.28f + 0.04f * sin(t * 8.0f);
-                    
+
                     glm::mat4 model = glm::mat4(1.0f);
                     model = glm::translate(model, col.pos + glm::vec3(0.0f, yOffset * 0.5f, 0.0f));
                     model = glm::scale(model, glm::vec3(glowScale));
-                    
+
                     shader.setMat4("model", model);
                     shader.setVec3("baseColor", glowColor);
                     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -1719,11 +1837,11 @@ int main() {
                 {
                     glm::vec3 haloColor = glm::vec3(1.0f, 0.3f, 0.05f) * torchFlicker * 0.15f;
                     float haloScale = 0.4f + 0.08f * sin(t * 4.0f);
-                    
+
                     glm::mat4 model = glm::mat4(1.0f);
                     model = glm::translate(model, col.pos);
                     model = glm::scale(model, glm::vec3(haloScale));
-                    
+
                     shader.setMat4("model", model);
                     shader.setVec3("baseColor", haloColor);
                     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -1734,18 +1852,18 @@ int main() {
                     float sparkPhase = t * 2.0f + spark * 2.1f + col.pos.x;
                     float sparkY = fmod(sparkPhase, 1.5f); // Ciclo de 0 a 1.5
                     float sparkLife = 1.0f - (sparkY / 1.5f); // Fade out mientras sube
-                    
+
                     if (sparkLife > 0.0f) {
                         float sparkX = sin(sparkPhase * 3.0f + spark) * 0.15f;
                         float sparkZ = cos(sparkPhase * 2.5f + spark * 0.7f) * 0.15f;
-                        
+
                         glm::vec3 sparkColor = glm::vec3(1.0f, 0.7f, 0.2f) * sparkLife * torchFlicker * 1.0f;
                         float sparkScale = 0.03f * sparkLife;
-                        
+
                         glm::mat4 model = glm::mat4(1.0f);
                         model = glm::translate(model, col.pos + glm::vec3(sparkX, sparkY + 0.2f, sparkZ));
                         model = glm::scale(model, glm::vec3(sparkScale));
-                        
+
                         shader.setMat4("model", model);
                         shader.setVec3("baseColor", sparkColor);
                         glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -1795,13 +1913,17 @@ int main() {
 
                     if (!InBounds(r, c)) {
                         cellColor = glm::vec3(0.15f, 0.15f, 0.15f);
-                    } else if (IsWall(r, c)) {
+                    }
+                    else if (IsWall(r, c)) {
                         cellColor = glm::vec3(0.4f, 0.4f, 0.45f);
-                    } else if (IsFloor(r, c)) {
+                    }
+                    else if (IsFloor(r, c)) {
                         cellColor = glm::vec3(0.2f, 0.15f, 0.1f);
-                    } else if (Cell(r, c) == 'E') {
+                    }
+                    else if (Cell(r, c) == 'E') {
                         cellColor = glm::vec3(0.0f, 0.8f, 0.0f);
-                    } else {
+                    }
+                    else {
                         cellColor = glm::vec3(0.1f, 0.1f, 0.1f);
                     }
 

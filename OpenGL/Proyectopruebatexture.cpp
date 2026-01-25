@@ -1434,6 +1434,48 @@ int main() {
             shader.setFloat("spotOuterCutOff", 0.0f);
         }
 
+        // ===== CONFIGURAR LUCES DE ANTORCHA ANTES DE DIBUJAR EL LABERINTO =====
+        // Las antorchas emiten luz naranja/amarilla tipo fuego
+        {
+            float t = (float)glfwGetTime();
+
+            // Parpadeo de intensidad tipo fuego
+            float flicker1 = sin(t * 15.0f) * 0.1f;
+            float flicker2 = sin(t * 23.0f) * 0.08f;
+            float flicker3 = sin(t * 7.0f) * 0.15f;
+            float torchFlicker = 0.7f + flicker1 + flicker2 + flicker3;
+            float torchIntensity = torchFlicker * 1.5f; // Reducido de 2.5f a 1.5f
+
+            // Color de fuego variable
+            float colorShift = 0.5f + 0.5f * sin(t * 5.0f);
+            glm::vec3 torchColor = glm::mix(
+                glm::vec3(1.0f, 0.4f, 0.1f),  // Naranja
+                glm::vec3(1.0f, 0.7f, 0.2f),  // Amarillo
+                colorShift
+            ) * torchIntensity;
+
+            // Configurar hasta 8 luces de antorcha en el shader
+            int torchIndex = 0;
+            const int MAX_TORCH_LIGHTS = 8;
+
+            for (const auto& col : collectibles) {
+                if (col.collected || torchIndex >= MAX_TORCH_LIGHTS) continue;
+
+                // Posición de luz ligeramente arriba del cubo
+                glm::vec3 torchLightPos = col.pos + glm::vec3(0.0f, 0.3f, 0.0f);
+
+                // Enviar al shader
+                std::string uniform = "torchPositions[" + std::to_string(torchIndex) + "]";
+                shader.setVec3(uniform, torchLightPos);
+                torchIndex++;
+            }
+
+            // Informar cuántas antorchas hay activas
+            shader.setInt("numTorchLights", torchIndex);
+            shader.setVec3("torchColor", torchColor);
+            shader.setFloat("torchIntensity", torchIntensity);
+        }
+
         // ===== DIBUJAR LABERINTO OPTIMIZADO (BATCHING) =====
         // Usar geometría pre-calculada: ~10 draw calls en lugar de ~100,000
         {
@@ -1591,97 +1633,129 @@ int main() {
         glDrawArrays(GL_TRIANGLES,0,36);
         */
 
-        // ================= RECOLECCIÓN Y DIBUJO DE CUBOS COLECCIONABLES (ANTORCHAS) =================
+        // ================= RECOLECCIÓN DE CUBOS COLECCIONABLES =================
         CheckCollectibles(camera.Position, window);
 
-        // ===== CONFIGURAR LUCES DE ANTORCHA =====
-        // Las antorchas emiten luz naranja/amarilla tipo fuego
-        {
-            float t = (float)glfwGetTime();
-
-            // Parpadeo de intensidad tipo fuego
-            float flicker1 = sin(t * 15.0f) * 0.1f;
-            float flicker2 = sin(t * 23.0f) * 0.08f;
-            float flicker3 = sin(t * 7.0f) * 0.15f;
-            float torchFlicker = 0.7f + flicker1 + flicker2 + flicker3;
-            float torchIntensity = torchFlicker * 2.5f;
-
-            // Color de fuego variable
-            float colorShift = 0.5f + 0.5f * sin(t * 5.0f);
-            glm::vec3 torchColor = glm::mix(
-                glm::vec3(1.0f, 0.4f, 0.1f),  // Naranja
-                glm::vec3(1.0f, 0.7f, 0.2f),  // Amarillo
-                colorShift
-            ) * torchIntensity;
-
-            // Configurar hasta 8 luces de antorcha en el shader
-            int torchIndex = 0;
-            const int MAX_TORCH_LIGHTS = 8;
-
-            for (const auto& col : collectibles) {
-                if (col.collected || torchIndex >= MAX_TORCH_LIGHTS) continue;
-
-                // Posición de luz ligeramente arriba del cubo
-                glm::vec3 torchLightPos = col.pos + glm::vec3(0.0f, 0.3f, 0.0f);
-
-                // Enviar al shader (nombre correcto: torchPositions)
-                std::string uniform = "torchPositions[" + std::to_string(torchIndex) + "]";
-                shader.setVec3(uniform, torchLightPos);
-                torchIndex++;
-            }
-
-            // Informar cuántas antorchas hay activas
-            shader.setInt("numTorchLights", torchIndex);
-            shader.setVec3("torchColor", torchColor);
-            shader.setFloat("torchIntensity", torchIntensity); // Intensidad variable
-        }
-
-        // ===== DIBUJAR ANTORCHAS CON EFECTO DE BRILLO =====
+        // ===== DIBUJAR ANTORCHAS CON EFECTO DE BRILLO MEJORADO =====
         if (!collectibles.empty()) {
             float t = (float)glfwGetTime();
-
-            // Parpadeo de intensidad tipo fuego para el brillo visual
-            float flicker1 = sin(t * 15.0f) * 0.1f;
-            float flicker2 = sin(t * 23.0f) * 0.08f;
-            float flicker3 = sin(t * 7.0f) * 0.15f;
-            float torchFlicker = 0.85f + flicker1 + flicker2 + flicker3;
-
-            // Pulso adicional
-            float pulse = 0.85f + 0.15f * sin(t * 3.0f);
-
-            // Color de fuego variable
-            float colorShift = 0.5f + 0.5f * sin(t * 5.0f);
-            glm::vec3 baseFireColor = glm::mix(
-                glm::vec3(1.0f, 0.3f, 0.05f),  // Rojo-naranja
-                glm::vec3(1.0f, 0.6f, 0.1f),   // Naranja-amarillo
-                colorShift
-            );
-
-            // Color final con brillo intenso
-            glm::vec3 torchEmissive = baseFireColor * torchFlicker * pulse * 3.0f;
 
             glBindVertexArray(cubeVAO);
             shader.use();
             shader.setBool("useTexture", false);
 
+            // Habilitar blending para efectos de glow
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Blending aditivo para brillo
+
             for (const auto& col : collectibles) {
                 if (col.collected) continue;
 
+                // Parpadeo de intensidad tipo fuego
+                float flicker1 = sin(t * 15.0f + col.pos.x) * 0.1f;
+                float flicker2 = sin(t * 23.0f + col.pos.z) * 0.08f;
+                float flicker3 = sin(t * 7.0f + col.pos.x * col.pos.z) * 0.15f;
+                float torchFlicker = 0.85f + flicker1 + flicker2 + flicker3;
+
+                // Pulso adicional
+                float pulse = 0.85f + 0.15f * sin(t * 3.0f + col.pos.x);
+
+                // Color de fuego variable
+                float colorShift = 0.5f + 0.5f * sin(t * 5.0f + col.pos.z * 0.5f);
+                glm::vec3 baseFireColor = glm::mix(
+                    glm::vec3(1.0f, 0.3f, 0.05f),  // Rojo-naranja
+                    glm::vec3(1.0f, 0.6f, 0.1f),   // Naranja-amarillo
+                    colorShift
+                );
+
                 // Movimiento sutil de la llama
-                float yOffset = 0.03f * sin(t * 8.0f + col.pos.x * 2.0f);
+                float yOffset = 0.05f * sin(t * 8.0f + col.pos.x * 2.0f);
+                float xOffset = 0.02f * sin(t * 6.0f + col.pos.z);
+                float zOffset = 0.02f * cos(t * 7.0f + col.pos.x);
 
-                glm::mat4 model = glm::mat4(1.0f);
-                model = glm::translate(model, col.pos + glm::vec3(0.0f, yOffset, 0.0f));
+                // === CAPA 1: Núcleo brillante (centro de la llama) ===
+                {
+                    glm::vec3 coreColor = glm::vec3(1.0f, 0.9f, 0.5f) * torchFlicker * pulse * 2.0f;
+                    float coreScale = 0.12f + 0.02f * sin(t * 20.0f);
+                    
+                    glm::mat4 model = glm::mat4(1.0f);
+                    model = glm::translate(model, col.pos + glm::vec3(xOffset, yOffset + 0.1f, zOffset));
+                    model = glm::scale(model, glm::vec3(coreScale));
+                    
+                    shader.setMat4("model", model);
+                    shader.setVec3("baseColor", coreColor);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
 
-                // Escala variable para simular llama
-                float scaleFlicker = 0.22f + 0.04f * sin(t * 12.0f + col.pos.z);
-                model = glm::scale(model, glm::vec3(scaleFlicker));
+                // === CAPA 2: Llama principal ===
+                {
+                    glm::vec3 flameColor = baseFireColor * torchFlicker * pulse * 1.5f;
+                    float flameScale = 0.18f + 0.03f * sin(t * 12.0f + col.pos.z);
+                    
+                    glm::mat4 model = glm::mat4(1.0f);
+                    model = glm::translate(model, col.pos + glm::vec3(xOffset * 0.5f, yOffset, zOffset * 0.5f));
+                    model = glm::scale(model, glm::vec3(flameScale));
+                    
+                    shader.setMat4("model", model);
+                    shader.setVec3("baseColor", flameColor);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
 
-                shader.setMat4("model", model);
-                shader.setVec3("baseColor", torchEmissive);
+                // === CAPA 3: Resplandor exterior (glow) ===
+                {
+                    glm::vec3 glowColor = glm::vec3(1.0f, 0.4f, 0.1f) * torchFlicker * 0.4f;
+                    float glowScale = 0.28f + 0.04f * sin(t * 8.0f);
+                    
+                    glm::mat4 model = glm::mat4(1.0f);
+                    model = glm::translate(model, col.pos + glm::vec3(0.0f, yOffset * 0.5f, 0.0f));
+                    model = glm::scale(model, glm::vec3(glowScale));
+                    
+                    shader.setMat4("model", model);
+                    shader.setVec3("baseColor", glowColor);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
 
-                glDrawArrays(GL_TRIANGLES, 0, 36);
+                // === CAPA 4: Halo difuso (atmosfera) ===
+                {
+                    glm::vec3 haloColor = glm::vec3(1.0f, 0.3f, 0.05f) * torchFlicker * 0.15f;
+                    float haloScale = 0.4f + 0.08f * sin(t * 4.0f);
+                    
+                    glm::mat4 model = glm::mat4(1.0f);
+                    model = glm::translate(model, col.pos);
+                    model = glm::scale(model, glm::vec3(haloScale));
+                    
+                    shader.setMat4("model", model);
+                    shader.setVec3("baseColor", haloColor);
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
+
+                // === PARTÍCULAS DE CHISPAS (pequeños cubos que suben) ===
+                for (int spark = 0; spark < 3; spark++) {
+                    float sparkPhase = t * 2.0f + spark * 2.1f + col.pos.x;
+                    float sparkY = fmod(sparkPhase, 1.5f); // Ciclo de 0 a 1.5
+                    float sparkLife = 1.0f - (sparkY / 1.5f); // Fade out mientras sube
+                    
+                    if (sparkLife > 0.0f) {
+                        float sparkX = sin(sparkPhase * 3.0f + spark) * 0.15f;
+                        float sparkZ = cos(sparkPhase * 2.5f + spark * 0.7f) * 0.15f;
+                        
+                        glm::vec3 sparkColor = glm::vec3(1.0f, 0.7f, 0.2f) * sparkLife * torchFlicker * 1.0f;
+                        float sparkScale = 0.03f * sparkLife;
+                        
+                        glm::mat4 model = glm::mat4(1.0f);
+                        model = glm::translate(model, col.pos + glm::vec3(sparkX, sparkY + 0.2f, sparkZ));
+                        model = glm::scale(model, glm::vec3(sparkScale));
+                        
+                        shader.setMat4("model", model);
+                        shader.setVec3("baseColor", sparkColor);
+                        glDrawArrays(GL_TRIANGLES, 0, 36);
+                    }
+                }
             }
+
+            // Restaurar blending normal
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDisable(GL_BLEND);
         }
 
         // ================= DIBUJAR MINIMAPA (solo si linterna encendida) =================

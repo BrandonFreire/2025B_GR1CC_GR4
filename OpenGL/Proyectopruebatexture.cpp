@@ -10,7 +10,6 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <learnopengl/shader.h>
-//#include <learnopengl/model.h>
 #include <learnopengl/model_animation.h>   
 #include <learnopengl/animation.h>          
 #include <learnopengl/animator.h>  

@@ -16,7 +16,7 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
-const int MAX_BONES = 200;
+const int MAX_BONES = 250;
 uniform mat4 finalBonesMatrices[MAX_BONES];
 uniform bool useAnimation;
 
@@ -28,9 +28,12 @@ void main()
     if (useAnimation)
     {
         bool hasValidBone = false;
+        // (Línea 29 nueva)
         for (int i = 0; i < 4; i++)
         {
-            if (aBoneIDs[i] >= 0 && aBoneIDs[i] < MAX_BONES)
+            // AÑADIMOS: && aWeights[i] > 0.0
+            // Esto evita que intentemos leer una matriz si el hueso no influye en nada.
+            if (aBoneIDs[i] >= 0 && aBoneIDs[i] < MAX_BONES && aWeights[i] > 0.0)
             {
                 hasValidBone = true;
                 vec4 localPosition = finalBonesMatrices[aBoneIDs[i]] * vec4(aPos, 1.0);

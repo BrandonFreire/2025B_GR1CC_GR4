@@ -34,6 +34,7 @@ extern "C" {
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <learnopengl/stb_image.h>
+#include <learnopengl/camera.h>
 
 // Estructura simple para coordenadas de grid
 struct Point { int r, c; };
@@ -112,62 +113,9 @@ float alturaAerea = 50.0f;  // Altura cuando vuelas sobre el laberinto
 float alturaOriginal = 2.0f; // Altura normal del jugador
 
 // ================= CAMARA =================
-class Camera {
-public:
-    glm::vec3 Position{ 0.0f, 2.0f, 10.0f };
-    glm::vec3 Front{ 0.0f, 0.0f, -1.0f };
-    glm::vec3 Up{ 0.0f, 1.0f, 0.0f };
-    glm::vec3 Right;
-    glm::vec3 WorldUp{ 0.0f, 1.0f, 0.0f };
+// Usar la clase Camera de learnopengl/camera.h
+Camera camera(glm::vec3(0.0f, 2.0f, 10.0f));
 
-    float Yaw{ -90.0f };
-    float Pitch{ 0.0f };
-    float Speed{ 6.0f };
-    float Sensitivity{ 0.1f };
-    float Zoom{ 45.0f };
-
-    Camera() { update(); }
-
-    glm::mat4 GetViewMatrix() {
-        return glm::lookAt(Position, Position + Front, Up);
-    }
-
-    void Keyboard(int dir, float dt) {
-        float v = Speed * dt;
-        if (dir == 0) Position += Front * v;
-        if (dir == 1) Position -= Front * v;
-        if (dir == 2) Position -= Right * v;
-        if (dir == 3) Position += Right * v;
-    }
-
-    void Mouse(float x, float y) {
-        x *= Sensitivity;
-        y *= Sensitivity;
-        Yaw += x;
-        Pitch = glm::clamp(Pitch + y, -89.0f, 89.0f);
-        update();
-    }
-
-    void SetPose(const glm::vec3& pos, float yawDeg, float pitchDeg) {
-        Position = pos;
-        Yaw = yawDeg;
-        Pitch = glm::clamp(pitchDeg, -89.0f, 89.0f);
-        update();
-    }
-
-private:
-    void update() {
-        glm::vec3 f;
-        f.x = cos(glm::radians(Yaw)) * cos(glm::radians(Pitch));
-        f.y = sin(glm::radians(Pitch));
-        f.z = sin(glm::radians(Yaw)) * cos(glm::radians(Pitch));
-        Front = glm::normalize(f);
-        Right = glm::normalize(glm::cross(Front, WorldUp));
-        Up = glm::normalize(glm::cross(Right, Front));
-    }
-};
-
-Camera camera;
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
@@ -183,9 +131,12 @@ void mouse_callback(GLFWwindow*, double xpos, double ypos) {
         lastY = (float)ypos;
         firstMouse = false;
     }
-    camera.Mouse((float)xpos - lastX, lastY - (float)ypos);
+    float xoffset = (float)xpos - lastX;
+    float yoffset = lastY - (float)ypos; // invertido porque y crece hacia abajo
     lastX = (float)xpos;
     lastY = (float)ypos;
+    
+    camera.ProcessMouseMovement(xoffset, yoffset);
 }
 
 // ================= INPUT =================
@@ -201,7 +152,7 @@ void processInput(GLFWwindow* window) {
         camera.Position.y = alturaAerea;
         // Mirar hacia abajo
         camera.Pitch = -89.0f;
-        camera.Mouse(0, 0); // Actualizar vectores de cámara
+        camera.ProcessMouseMovement(0, 0); // Actualizar vectores de cámara
     }
     spacePrevState = spaceState;
 
@@ -212,15 +163,18 @@ void processInput(GLFWwindow* window) {
         modoAereo = false;
         camera.Position.y = alturaOriginal;
         camera.Pitch = 0.0f;
-        camera.Mouse(0, 0); // Actualizar vectores de cámara
+        camera.ProcessMouseMovement(0, 0); // Actualizar vectores de cámara
     }
     shiftPrevState = shiftState;
 
     glm::vec3 move(0.0f);
 
+    // Velocidad de movimiento
+    camera.MovementSpeed = 6.0f;
+
     if (modoAereo) {
         // Movimiento libre en modo aéreo (sin colisiones)
-        float v = camera.Speed * 3.0f * deltaTime; // Más rápido en el aire
+        float v = camera.MovementSpeed * 3.0f * deltaTime; // Más rápido en el aire
 
         // Movimiento horizontal basado en la orientación
         glm::vec3 forward = glm::normalize(glm::vec3(camera.Front.x, 0.0f, camera.Front.z));
@@ -240,7 +194,7 @@ void processInput(GLFWwindow* window) {
         glm::vec3 f = glm::normalize(glm::vec3(camera.Front.x, 0.0f, camera.Front.z));
         glm::vec3 r = glm::normalize(glm::vec3(camera.Right.x, 0.0f, camera.Right.z));
 
-        float v = camera.Speed * deltaTime;
+        float v = camera.MovementSpeed * deltaTime;
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) move += f * v;
         if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) move -= f * v;
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) move -= r * v;
@@ -1369,7 +1323,11 @@ int main() {
     int sr = 0, sc = 0;
     if (!FindSpawn(sr, sc)) { sr = 0; sc = 0; }
     glm::vec3 spawnW = CellToWorld(sr, sc);
-    camera.SetPose(glm::vec3(spawnW.x, 2.0f, spawnW.z), 180.0f, 0.0f);
+    // Configurar posición y orientación de la cámara
+    camera.Position = glm::vec3(spawnW.x, 2.0f, spawnW.z);
+    camera.Yaw = 180.0f;
+    camera.Pitch = 0.0f;
+    camera.ProcessMouseMovement(0, 0); // Actualizar vectores
 
 
     // === NUEVO: INICIALIZAR ENEMIGOS ===

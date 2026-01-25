@@ -30,6 +30,7 @@ extern "C" {
 
 #include <queue>
 #include <algorithm>
+#include <array>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <learnopengl/stb_image.h>
@@ -461,355 +462,499 @@ static Point WorldToCell(glm::vec3 pos) {
 }
 
 // =====================================================================
-// ALGORITMO A* OPTIMIZADO CON PERSECUCIÓN INTELIGENTE
+// SISTEMA DE IA OPTIMIZADO PARA PERSECUCIÓN DEL ALIEN
 // =====================================================================
-// Ventajas sobre BFS:
-// 1. A* usa heurística (distancia Manhattan) para explorar menos nodos
-// 2. Persecución directa cuando hay línea de visión (evita pathfinding)
-// 3. Caché inteligente que solo recalcula cuando es necesario
-// 4. Early-exit cuando el enemigo está cerca del jugador
+// Características:
+// 1. BFS con caché inteligente (solo recalcula cuando es necesario)
+// 2. Persecución directa cuando está cerca
+// 3. Sin allocaciones en el game loop (buffers pre-allocados)
 // =====================================================================
 
 #include <unordered_set>
 #include <cmath>
 
-// Estructura para nodos del A*
-struct AStarNode {
-    int r, c;
-    int g;  // Costo desde el inicio
-    int f;  // g + h (costo total estimado)
+// ===== CONSTANTES DE PATHFINDING OPTIMIZADAS =====
+const int PATHFIND_MAX_NODES = 1500;       // Suficiente para mapas grandes
+const float PATH_RECALC_INTERVAL = 0.5f;   // Recalcular cada 0.5s máximo
+const int DIRECT_CHASE_DISTANCE = 5;       // Persecución directa si está cerca
+const int PLAYER_MOVE_THRESHOLD = 3;       // Recalcular si jugador se movió N celdas
+
+// ===== BUFFERS ESTÁTICOS REUTILIZABLES (SIN ALLOCACIONES EN RUNTIME) =====
+static std::vector<std::vector<int>> bfsDistance;      // Distancia desde el inicio
+static std::vector<std::vector<bool>> bfsVisited;      // Nodos visitados
+static std::vector<Point> bfsQueue;                     // Cola BFS pre-allocada
+static int bfsQueueHead = 0, bfsQueueTail = 0;
+static bool pathfindBuffersInit = false;
+
+// Direcciones de movimiento (arriba, abajo, izquierda, derecha)
+static const int DIR_R[] = {-1, 1, 0, 0};
+static const int DIR_C[] = {0, 0, -1, 1};
+
+// ===== INICIALIZACIÓN DE BUFFERS (una sola vez) =====
+static void InitPathfindBuffers() {
+    if (pathfindBuffersInit && (int)bfsDistance.size() == MAP_H) return;
     
-    // Para priority_queue (menor f tiene mayor prioridad)
-    bool operator>(const AStarNode& other) const {
-        return f > other.f;
-    }
-};
-
-// Constantes de pathfinding optimizadas
-const int PATHFIND_MAX_NODES = 800;        // Máximo nodos a explorar (reduce CPU)
-const float PATH_RECALC_INTERVAL = 0.3f;   // Recalcular cada 0.3s (más que antes)
-const int DIRECT_CHASE_DISTANCE = 3;       // Distancia para persecución directa
-const int LINE_OF_SIGHT_CHECK = 8;         // Máximo para verificar línea de visión
-
-// Buffers estáticos reutilizables para A*
-static std::vector<std::vector<int>> astarG;      // Costo g por celda
-static std::vector<std::vector<bool>> astarClosed; // Nodos cerrados
-static std::vector<std::vector<Point>> astarParent; // Padres para reconstruir
-static bool astarBuffersInit = false;
-
-// Inicializar buffers A* una sola vez
-static void InitAStarBuffers() {
-    if (astarBuffersInit && (int)astarG.size() == MAP_H) return;
-    
-    astarG.assign(MAP_H, std::vector<int>(MAP_W, INT_MAX));
-    astarClosed.assign(MAP_H, std::vector<bool>(MAP_W, false));
-    astarParent.assign(MAP_H, std::vector<Point>(MAP_W, {-1, -1}));
-    astarBuffersInit = true;
+    bfsDistance.assign(MAP_H, std::vector<int>(MAP_W, -1));
+    bfsVisited.assign(MAP_H, std::vector<bool>(MAP_W, false));
+    bfsQueue.resize(MAP_H * MAP_W); // Pre-allocar para el peor caso
+    pathfindBuffersInit = true;
 }
 
-// Limpiar solo región necesaria (optimización clave)
-static void ClearAStarRegion(int r1, int c1, int r2, int c2, int margin = 5) {
-    int minR = std::max(0, std::min(r1, r2) - margin);
-    int maxR = std::min(MAP_H - 1, std::max(r1, r2) + margin);
-    int minC = std::max(0, std::min(c1, c2) - margin);
-    int maxC = std::min(MAP_W - 1, std::max(c1, c2) + margin);
+// ===== RESET RÁPIDO DE BUFFERS (solo la región usada) =====
+static void ResetBFSBuffers(int centerR, int centerC, int radius) {
+    int minR = std::max(0, centerR - radius);
+    int maxR = std::min(MAP_H - 1, centerR + radius);
+    int minC = std::max(0, centerC - radius);
+    int maxC = std::min(MAP_W - 1, centerC + radius);
     
     for (int r = minR; r <= maxR; r++) {
         for (int c = minC; c <= maxC; c++) {
-            astarG[r][c] = INT_MAX;
-            astarClosed[r][c] = false;
-            astarParent[r][c] = {-1, -1};
+            bfsDistance[r][c] = -1;
+            bfsVisited[r][c] = false;
         }
     }
+    bfsQueueHead = 0;
+    bfsQueueTail = 0;
 }
 
-// Heurística: Distancia Manhattan (admisible para grid 4-direccional)
-static inline int Heuristic(int r1, int c1, int r2, int c2) {
-    return abs(r1 - r2) + abs(c1 - c2);
+// =====================================================================
+// ESTRUCTURAS PARA OPTIMIZACIÓN DE RENDERIZADO
+// =====================================================================
+
+// Información pre-calculada de cada pared
+struct WallInfo {
+    int textureIndex;      // Índice de textura (0-5 para hall, 6 para room, 7-8 para indie)
+    bool flipTexY;         // Si debe voltear la textura
+};
+
+// Pre-cálculo de texturas por celda y dirección (N, S, W, E)
+static std::vector<std::vector<std::array<WallInfo, 4>>> wallTextureCache;
+static bool wallTextureCacheInit = false;
+
+// Estructura para geometría batched del laberinto
+struct MazeBatch {
+    unsigned int VAO, VBO;
+    int vertexCount;
+    unsigned int textureID;
+};
+
+// Batches separados por textura
+static std::vector<MazeBatch> mazeBatches;
+static bool mazeBatchesInit = false;
+
+// Cache de uniform locations para matrices de huesos
+static std::vector<GLint> boneMatrixLocs;
+static std::vector<GLint> torchPosLocs;
+static bool uniformLocsInit = false;
+
+// Inicializar buffers de pathfinding una sola vez
+static void InitAStarBuffers() {
+    InitPathfindBuffers();
 }
 
-// Verificar línea de visión entre dos puntos (Bresenham simplificado)
-// Si hay línea de visión directa, no necesitamos pathfinding
-static bool HasLineOfSight(int r1, int c1, int r2, int c2) {
-    int dr = abs(r2 - r1);
-    int dc = abs(c2 - c1);
-    
-    // Limitar distancia de verificación
-    if (dr + dc > LINE_OF_SIGHT_CHECK) return false;
-    
-    int sr = (r1 < r2) ? 1 : -1;
-    int sc = (c1 < c2) ? 1 : -1;
-    
-    int err = dr - dc;
-    int r = r1, c = c1;
-    
-    while (r != r2 || c != c2) {
-        // Verificar si la celda actual es caminable
-        if (!InBounds(r, c) || !IsFloor(r, c)) return false;
-        
-        int e2 = 2 * err;
-        if (e2 > -dc) { err -= dc; r += sr; }
-        if (e2 < dr)  { err += dr; c += sc; }
-    }
-    
-    return InBounds(r2, c2) && IsFloor(r2, c2);
-}
+// =====================================================================
+// PRE-CÁLCULO DE TEXTURAS DE PAREDES (ejecutar una vez al inicio)
+// =====================================================================
+// Esto elimina los bucles while y búsquedas repetidas en cada frame
 
-// ALGORITMO A* OPTIMIZADO
-static std::vector<Point> ComputePathAStar(int startR, int startC, int targetR, int targetC) {
-    std::vector<Point> path;
+// Estructura para segmentos de textura indie (definida globalmente)
+struct IndieSeg { 
+    int startR; 
+    int startC; 
+    int dir;  // dir:0=horizontal, 1=vertical
+    int len; 
+};
+
+static std::vector<IndieSeg> g_indieSegs; // Referencia global para indie segments
+
+static void PrecomputeWallTextures() {
+    if (wallTextureCacheInit) return;
     
-    // Caso trivial: ya estamos en el destino
-    if (startR == targetR && startC == targetC) return path;
+    wallTextureCache.assign(MAP_H, std::vector<std::array<WallInfo, 4>>(MAP_W));
     
-    // Early exit: si están muy lejos, no buscar (el enemigo se moverá hacia el jugador de forma aproximada)
-    int manhattan = Heuristic(startR, startC, targetR, targetC);
-    if (manhattan > 60) {
-        // Mover hacia la dirección general del jugador
-        int bestR = startR, bestC = startC;
-        int bestDist = manhattan;
-        
-        const int dr[] = {-1, 1, 0, 0};
-        const int dc[] = {0, 0, -1, 1};
-        
-        for (int i = 0; i < 4; i++) {
-            int nr = startR + dr[i];
-            int nc = startC + dc[i];
-            if (InBounds(nr, nc) && IsFloor(nr, nc)) {
-                int dist = Heuristic(nr, nc, targetR, targetC);
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    bestR = nr;
-                    bestC = nc;
+    for (int r = 0; r < MAP_H; r++) {
+        for (int c = 0; c < MAP_W; c++) {
+            if (!IsFloor(r, c)) continue;
+            
+            // Direcciones: 0=Norte, 1=Sur, 2=Oeste, 3=Este
+            // Norte (r-1)
+            if (!InBounds(r - 1, c) || IsWall(r - 1, c)) {
+                int nr = r - 1, nc = c;
+                int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
+                WallInfo& info = wallTextureCache[r][c][0];
+                
+                if (t == 2) {
+                    info.textureIndex = 6; // wallRoomTex
+                    info.flipTexY = false;
+                } else {
+                    bool isIndie = false;
+                    int chosen = 0;
+                    for (const auto& s : g_indieSegs) {
+                        if (s.dir == 0 && s.startR == r && nc >= s.startC && nc < s.startC + s.len) {
+                            isIndie = true;
+                            chosen = nc - s.startC;
+                            break;
+                        }
+                    }
+                    if (isIndie) {
+                        info.textureIndex = (chosen == 0) ? 7 : 8; // wallindie1 o wallindie2
+                    } else {
+                        int startC = nc;
+                        while (startC - 1 >= 0 && IsFloor(r, startC - 1) && IsWall(r - 1, startC - 1)) startC--;
+                        int offset = nc - startC;
+                        info.textureIndex = (5 - (offset % 6) + 6) % 6; // wallHallTex[idx]
+                    }
+                    info.flipTexY = true;
+                }
+            }
+            
+            // Sur (r+1)
+            if (!InBounds(r + 1, c) || IsWall(r + 1, c)) {
+                int nr = r + 1, nc = c;
+                int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
+                WallInfo& info = wallTextureCache[r][c][1];
+                
+                if (t == 2) {
+                    info.textureIndex = 6;
+                    info.flipTexY = false;
+                } else {
+                    bool isIndie = false;
+                    int chosen = 0;
+                    for (const auto& s : g_indieSegs) {
+                        if (s.dir == 0 && s.startR == r && nc >= s.startC && nc < s.startC + s.len) {
+                            isIndie = true;
+                            chosen = nc - s.startC;
+                            break;
+                        }
+                    }
+                    if (isIndie) {
+                        info.textureIndex = (chosen == 0) ? 7 : 8;
+                    } else {
+                        int startC = nc;
+                        while (startC - 1 >= 0 && IsFloor(r, startC - 1) && IsWall(r + 1, startC - 1)) startC--;
+                        int offset = nc - startC;
+                        info.textureIndex = (5 - (offset % 6) + 6) % 6;
+                    }
+                    info.flipTexY = true;
+                }
+            }
+            
+            // Oeste (c-1)
+            if (!InBounds(r, c - 1) || IsWall(r, c - 1)) {
+                int nr = r, nc = c - 1;
+                int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
+                WallInfo& info = wallTextureCache[r][c][2];
+                
+                if (t == 2) {
+                    info.textureIndex = 6;
+                    info.flipTexY = false;
+                } else {
+                    bool isIndie = false;
+                    int chosen = 0;
+                    for (const auto& s : g_indieSegs) {
+                        if (s.dir == 1 && s.startC == c && nr >= s.startR && nr < s.startR + s.len) {
+                            isIndie = true;
+                            chosen = nr - s.startR;
+                            break;
+                        }
+                    }
+                    if (isIndie) {
+                        info.textureIndex = (chosen == 0) ? 7 : 8;
+                    } else {
+                        int startR = nr;
+                        while (startR - 1 >= 0 && IsFloor(startR - 1, c) && IsWall(startR - 1, c - 1)) startR--;
+                        int offset = nr - startR;
+                        info.textureIndex = (5 - (offset % 6) + 6) % 6;
+                    }
+                    info.flipTexY = true;
+                }
+            }
+            
+            // Este (c+1)
+            if (!InBounds(r, c + 1) || IsWall(r, c + 1)) {
+                int nr = r, nc = c + 1;
+                int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
+                WallInfo& info = wallTextureCache[r][c][3];
+                
+                if (t == 2) {
+                    info.textureIndex = 6;
+                    info.flipTexY = false;
+                } else {
+                    bool isIndie = false;
+                    int chosen = 0;
+                    for (const auto& s : g_indieSegs) {
+                        if (s.dir == 1 && s.startC == c && nr >= s.startR && nr < s.startR + s.len) {
+                            isIndie = true;
+                            chosen = nr - s.startR;
+                            break;
+                        }
+                    }
+                    if (isIndie) {
+                        info.textureIndex = (chosen == 0) ? 7 : 8;
+                    } else {
+                        int startR = nr;
+                        while (startR - 1 >= 0 && IsFloor(startR - 1, c) && IsWall(startR - 1, c + 1)) startR--;
+                        int offset = nr - startR;
+                        info.textureIndex = (5 - (offset % 6) + 6) % 6;
+                    }
+                    info.flipTexY = true;
                 }
             }
         }
-        
-        if (bestR != startR || bestC != startC) {
-            path.push_back({bestR, bestC});
-        }
-        return path;
     }
     
-    // Verificar línea de visión directa (evita A* completamente)
-    if (HasLineOfSight(startR, startC, targetR, targetC)) {
-        // Construir camino directo
-        int r = startR, c = startC;
-        while (r != targetR || c != targetC) {
-            int dr = (targetR > r) ? 1 : (targetR < r) ? -1 : 0;
-            int dc = (targetC > c) ? 1 : (targetC < c) ? -1 : 0;
+    wallTextureCacheInit = true;
+    std::cout << "Wall texture cache inicializado para " << MAP_H << "x" << MAP_W << " celdas\n";
+}
+
+// =====================================================================
+// BATCHING DE GEOMETRÍA DEL LABERINTO
+// =====================================================================
+// Agrupa toda la geometría por textura para reducir draw calls masivamente
+
+// Array global de texturas (se llenará en main)
+static unsigned int g_allTextures[9]; // 0-5: hall, 6: room, 7-8: indie, + floor/ceiling
+
+static void BuildMazeGeometry() {
+    if (mazeBatchesInit) return;
+    
+    // Limpiar batches anteriores
+    for (auto& batch : mazeBatches) {
+        if (batch.VAO) glDeleteVertexArrays(1, &batch.VAO);
+        if (batch.VBO) glDeleteBuffers(1, &batch.VBO);
+    }
+    mazeBatches.clear();
+    
+    // Recopilar vértices por textura (índices 0-8 para paredes, 9 para suelo, 10 para techo)
+    std::vector<std::vector<float>> verticesByTexture(11);
+    
+    // Función lambda para agregar un quad de suelo/techo
+    // Genera un quad horizontal en la posición (x, z) a altura y
+    auto addFloorQuad = [](std::vector<float>& verts, float x, float z, float y, float nx, float ny, float nz) {
+        float halfT = TILE * 0.5f;
+        
+        // Esquinas del quad (visto desde arriba)
+        // Para suelo (ny > 0): normal apunta hacia arriba
+        // Para techo (ny < 0): normal apunta hacia abajo
+        
+        // Triángulo 1: esquina inferior-izquierda -> superior-izquierda -> superior-derecha
+        verts.insert(verts.end(), {x - halfT, y, z - halfT, nx, ny, nz, 0.0f, 0.0f});
+        verts.insert(verts.end(), {x + halfT, y, z - halfT, nx, ny, nz, 1.0f, 0.0f});
+        verts.insert(verts.end(), {x + halfT, y, z + halfT, nx, ny, nz, 1.0f, 1.0f});
+        
+        // Triángulo 2
+        verts.insert(verts.end(), {x + halfT, y, z + halfT, nx, ny, nz, 1.0f, 1.0f});
+        verts.insert(verts.end(), {x - halfT, y, z + halfT, nx, ny, nz, 0.0f, 1.0f});
+        verts.insert(verts.end(), {x - halfT, y, z - halfT, nx, ny, nz, 0.0f, 0.0f});
+    };
+    
+    // Función lambda para agregar un quad de pared
+    // Replica exactamente el orden y UVs del wallVertices original
+    // wallVertices original: UV(0,1) en bottom-left, UV(1,0) en top-right
+    // Con flipY=true: invertir las V (para texturas hall)
+    auto addWallQuad = [](std::vector<float>& verts, glm::vec3 pos, float rotY, float w, float h, glm::vec3 normal, bool flipY) {
+        float halfW = w * 0.5f;
+        float cosR = cos(rotY), sinR = sin(rotY);
+        
+        // Vector "right" en el plano XZ (perpendicular a la normal)
+        glm::vec3 right = glm::vec3(cosR, 0.0f, sinR) * halfW;
+        
+        // Las 4 esquinas del quad
+        glm::vec3 bl = pos - right;                          // Bottom-left
+        glm::vec3 br = pos + right;                          // Bottom-right
+        glm::vec3 tl = bl + glm::vec3(0.0f, h, 0.0f);        // Top-left
+        glm::vec3 tr = br + glm::vec3(0.0f, h, 0.0f);        // Top-right
+        
+        // Coordenadas UV - orden original del wallVertices:
+        // bottom-left = (0, 1), bottom-right = (1, 1)
+        // top-left = (0, 0), top-right = (1, 0)
+        // Si flipY=true, invertimos V: bottom usa V=0, top usa V=1
+        float vBottom = flipY ? 0.0f : 1.0f;
+        float vTop = flipY ? 1.0f : 0.0f;
+        
+        // Triángulo 1: bl -> br -> tr (igual que wallVertices)
+        verts.insert(verts.end(), {bl.x, bl.y, bl.z, normal.x, normal.y, normal.z, 0.0f, vBottom});
+        verts.insert(verts.end(), {br.x, br.y, br.z, normal.x, normal.y, normal.z, 1.0f, vBottom});
+        verts.insert(verts.end(), {tr.x, tr.y, tr.z, normal.x, normal.y, normal.z, 1.0f, vTop});
+        
+        // Triángulo 2: tr -> tl -> bl (igual que wallVertices)
+        verts.insert(verts.end(), {tr.x, tr.y, tr.z, normal.x, normal.y, normal.z, 1.0f, vTop});
+        verts.insert(verts.end(), {tl.x, tl.y, tl.z, normal.x, normal.y, normal.z, 0.0f, vTop});
+        verts.insert(verts.end(), {bl.x, bl.y, bl.z, normal.x, normal.y, normal.z, 0.0f, vBottom});
+    };
+    
+    // Recorrer todo el mapa y construir geometría
+    for (int r = 0; r < MAP_H; r++) {
+        for (int c = 0; c < MAP_W; c++) {
+            if (!IsFloor(r, c)) continue;
             
-            // Preferir movimiento en una dirección a la vez
-            if (dr != 0 && InBounds(r + dr, c) && IsFloor(r + dr, c)) {
-                r += dr;
-            } else if (dc != 0 && InBounds(r, c + dc) && IsFloor(r, c + dc)) {
-                c += dc;
-            } else {
-                break; // No hay camino directo
+            glm::vec3 w = CellToWorld(r, c);
+            
+            // Suelo (textura índice 9)
+            addFloorQuad(verticesByTexture[9], w.x, w.z, 0.0f, 0.0f, 1.0f, 0.0f);
+            
+            // Techo (textura índice 10 - sin textura, color sólido)
+            addFloorQuad(verticesByTexture[10], w.x, w.z, WALL_HEIGHT, 0.0f, -1.0f, 0.0f);
+            
+            // Paredes Norte (dir 0) - mirando hacia -Z (dentro de la celda)
+            if (!InBounds(r - 1, c) || IsWall(r - 1, c)) {
+                const WallInfo& info = wallTextureCache[r][c][0];
+                glm::vec3 wallPos = glm::vec3(w.x, 0.0f, w.z + TILE * 0.5f);
+                // Rotación 180° => la pared mira hacia -Z
+                addWallQuad(verticesByTexture[info.textureIndex], wallPos, 
+                           glm::radians(0.0f), TILE, WALL_HEIGHT, 
+                           glm::vec3(0.0f, 0.0f, -1.0f), info.flipTexY);
             }
-            path.push_back({r, c});
+            
+            // Paredes Sur (dir 1) - mirando hacia +Z (dentro de la celda)
+            if (!InBounds(r + 1, c) || IsWall(r + 1, c)) {
+                const WallInfo& info = wallTextureCache[r][c][1];
+                glm::vec3 wallPos = glm::vec3(w.x, 0.0f, w.z - TILE * 0.5f);
+                // Sin rotación => la pared mira hacia +Z
+                addWallQuad(verticesByTexture[info.textureIndex], wallPos, 
+                           glm::radians(180.0f), TILE, WALL_HEIGHT, 
+                           glm::vec3(0.0f, 0.0f, 1.0f), info.flipTexY);
+            }
+            
+            // Paredes Oeste (dir 2) - mirando hacia +X (dentro de la celda)
+            if (!InBounds(r, c - 1) || IsWall(r, c - 1)) {
+                const WallInfo& info = wallTextureCache[r][c][2];
+                glm::vec3 wallPos = glm::vec3(w.x - TILE * 0.5f, 0.0f, w.z);
+                // Rotación -90° => la pared mira hacia +X
+                addWallQuad(verticesByTexture[info.textureIndex], wallPos, 
+                           glm::radians(90.0f), TILE, WALL_HEIGHT, 
+                           glm::vec3(1.0f, 0.0f, 0.0f), info.flipTexY);
+            }
+            
+            // Paredes Este (dir 3) - mirando hacia -X (dentro de la celda)
+            if (!InBounds(r, c + 1) || IsWall(r, c + 1)) {
+                const WallInfo& info = wallTextureCache[r][c][3];
+                glm::vec3 wallPos = glm::vec3(w.x + TILE * 0.5f, 0.0f, w.z);
+                // Rotación 90° => la pared mira hacia -X
+                addWallQuad(verticesByTexture[info.textureIndex], wallPos, 
+                           glm::radians(-90.0f), TILE, WALL_HEIGHT, 
+                           glm::vec3(-1.0f, 0.0f, 0.0f), info.flipTexY);
+            }
         }
-        if (!path.empty()) return path;
     }
     
-    // A* completo cuando no hay línea de visión
-    InitAStarBuffers();
-    ClearAStarRegion(startR, startC, targetR, targetC, 10);
+    // Crear VAO/VBO para cada grupo de texturas
+    for (int i = 0; i < 11; i++) {
+        if (verticesByTexture[i].empty()) continue;
+        
+        MazeBatch batch;
+        batch.vertexCount = (int)verticesByTexture[i].size() / 8; // 8 floats per vertex
+        batch.textureID = (i < 9) ? g_allTextures[i] : 0; // Para suelo/techo se manejará aparte
+        
+        glGenVertexArrays(1, &batch.VAO);
+        glGenBuffers(1, &batch.VBO);
+        
+        glBindVertexArray(batch.VAO);
+        glBindBuffer(GL_ARRAY_BUFFER, batch.VBO);
+        glBufferData(GL_ARRAY_BUFFER, verticesByTexture[i].size() * sizeof(float), 
+                     verticesByTexture[i].data(), GL_STATIC_DRAW);
+        
+        // position
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+        // normal
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+        // texcoord
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+        
+        glBindVertexArray(0);
+        
+        mazeBatches.push_back(batch);
+        
+        std::cout << "Batch " << i << ": " << batch.vertexCount << " vertices\n";
+    }
     
-    // Priority queue (min-heap por f)
-    std::priority_queue<AStarNode, std::vector<AStarNode>, std::greater<AStarNode>> openSet;
+    mazeBatchesInit = true;
+    std::cout << "Maze geometry batched: " << mazeBatches.size() << " batches (vs ~" 
+              << (MAP_H * MAP_W * 6) << " draw calls antes)\n";
+}
+
+// Función para inicializar cache de uniform locations
+static void InitUniformLocations(unsigned int xenomorphShaderID) {
+    if (uniformLocsInit) return;
     
+    boneMatrixLocs.resize(250);
+    for (int i = 0; i < 250; i++) {
+        std::string name = "finalBonesMatrices[" + std::to_string(i) + "]";
+        boneMatrixLocs[i] = glGetUniformLocation(xenomorphShaderID, name.c_str());
+    }
+    
+    torchPosLocs.resize(8);
+    for (int i = 0; i < 8; i++) {
+        std::string name = "torchPositions[" + std::to_string(i) + "]";
+        torchPosLocs[i] = glGetUniformLocation(xenomorphShaderID, name.c_str());
+    }
+    
+    uniformLocsInit = true;
+    std::cout << "Uniform locations cacheados\n";
+}
+
+// ALGORITMO BFS: Encuentra el siguiente paso inmediato hacia el objetivo
+// Retorna la coordinada (r, c) a la que el enemigo debe moverse
+static Point GetNextStepBFS(int startR, int startC, int targetR, int targetC) {
+    // Si ya está en el destino, quedarse ahí
+    if (startR == targetR && startC == targetC) return { startR, startC };
+
     // Direcciones: Arriba, Abajo, Izquierda, Derecha
-    const int dr[] = {-1, 1, 0, 0};
-    const int dc[] = {0, 0, -1, 1};
-    
-    // Iniciar desde el punto de inicio
-    astarG[startR][startC] = 0;
-    int h = Heuristic(startR, startC, targetR, targetC);
-    openSet.push({startR, startC, 0, h});
-    
+    int dr[] = { -1, 1, 0, 0 };
+    int dc[] = { 0, 0, -1, 1 };
+
+    // Estructuras para BFS
+    bool visited[200][200]; // Ajustar tamaño según tu mapa máximo o usar vector dinámico
+    Point parent[200][200]; // Para reconstruir el camino
+
+    // Inicializar visited en false (simple memset o loops)
+    for (int i = 0; i < MAP_H; i++)
+        for (int j = 0; j < MAP_W; j++) visited[i][j] = false;
+
+    std::queue<Point> q;
+    q.push({ startR, startC });
+    visited[startR][startC] = true;
+    parent[startR][startC] = { -1, -1 };
+
     bool found = false;
-    int nodesExplored = 0;
-    
-    while (!openSet.empty() && nodesExplored < PATHFIND_MAX_NODES) {
-        AStarNode current = openSet.top();
-        openSet.pop();
-        
-        // Si ya procesamos este nodo, saltar
-        if (astarClosed[current.r][current.c]) continue;
-        astarClosed[current.r][current.c] = true;
-        nodesExplored++;
-        
-        // ¿Llegamos al destino?
-        if (current.r == targetR && current.c == targetC) {
+
+    while (!q.empty()) {
+        Point curr = q.front();
+        q.pop();
+
+        if (curr.r == targetR && curr.c == targetC) {
             found = true;
             break;
         }
-        
+
         // Explorar vecinos
         for (int i = 0; i < 4; i++) {
-            int nr = current.r + dr[i];
-            int nc = current.c + dc[i];
-            
-            if (!InBounds(nr, nc) || !IsFloor(nr, nc) || astarClosed[nr][nc]) continue;
-            
-            int tentativeG = current.g + 1;
-            
-            if (tentativeG < astarG[nr][nc]) {
-                astarG[nr][nc] = tentativeG;
-                astarParent[nr][nc] = {current.r, current.c};
-                int f = tentativeG + Heuristic(nr, nc, targetR, targetC);
-                openSet.push({nr, nc, tentativeG, f});
-            }
-        }
-    }
-    
-    if (!found) {
-        // No encontramos camino completo, pero podemos movernos hacia el mejor nodo explorado
-        // Buscar el nodo cerrado más cercano al objetivo
-        int bestR = startR, bestC = startC;
-        int bestH = Heuristic(startR, startC, targetR, targetC);
-        
-        // Buscar en región pequeña alrededor del inicio
-        for (int dr = -5; dr <= 5; dr++) {
-            for (int dc = -5; dc <= 5; dc++) {
-                int r = startR + dr;
-                int c = startC + dc;
-                if (InBounds(r, c) && astarClosed[r][c]) {
-                    int h = Heuristic(r, c, targetR, targetC);
-                    if (h < bestH) {
-                        bestH = h;
-                        bestR = r;
-                        bestC = c;
-                    }
-                }
-            }
-        }
-        
-        // Reconstruir camino hacia el mejor nodo encontrado
-        if (bestR != startR || bestC != startC) {
-            Point curr = {bestR, bestC};
-            while (curr.r != startR || curr.c != startC) {
-                path.push_back(curr);
-                curr = astarParent[curr.r][curr.c];
-                if (curr.r == -1) break;
-            }
-            std::reverse(path.begin(), path.end());
-        }
-        return path;
-    }
-    
-    // Reconstruir camino desde el objetivo
-    Point curr = {targetR, targetC};
-    while (curr.r != startR || curr.c != startC) {
-        path.push_back(curr);
-        curr = astarParent[curr.r][curr.c];
-        if (curr.r == -1) break;
-    }
-    std::reverse(path.begin(), path.end());
-    
-    return path;
-}
+            int nr = curr.r + dr[i];
+            int nc = curr.c + dc[i];
 
-// Función principal de pathfinding con caché inteligente
-static Point GetNextStepAStar(Enemy& e, int targetR, int targetC, float dt) {
-    e.pathRecalcTimer += dt;
-    
-    // Calcular distancia al jugador
-    int distToPlayer = Heuristic(e.r, e.c, targetR, targetC);
-    
-    // OPTIMIZACIÓN 1: Persecución directa si está muy cerca
-    if (distToPlayer <= DIRECT_CHASE_DISTANCE) {
-        // Buscar la celda adyacente que más nos acerque
-        const int dr[] = {-1, 1, 0, 0};
-        const int dc[] = {0, 0, -1, 1};
-        
-        int bestR = e.r, bestC = e.c;
-        int bestDist = distToPlayer;
-        
-        for (int i = 0; i < 4; i++) {
-            int nr = e.r + dr[i];
-            int nc = e.c + dc[i];
-            if (InBounds(nr, nc) && IsFloor(nr, nc)) {
-                int dist = Heuristic(nr, nc, targetR, targetC);
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    bestR = nr;
-                    bestC = nc;
-                }
+            // Validar límites y que sea suelo (IsFloor es tu función existente)
+            if (InBounds(nr, nc) && !visited[nr][nc] && IsFloor(nr, nc)) {
+                visited[nr][nc] = true;
+                parent[nr][nc] = curr;
+                q.push({ nr, nc });
             }
         }
-        
-        return {bestR, bestC};
     }
-    
-    // OPTIMIZACIÓN 2: Verificar si el caché sigue siendo válido
-    bool needRecalc = false;
-    
-    // Recalcular si el jugador se movió significativamente (más de 2 celdas)
-    int playerMoved = Heuristic(e.lastPlayerR, e.lastPlayerC, targetR, targetC);
-    if (playerMoved > 2) {
-        needRecalc = true;
-    }
-    
-    // Recalcular si el caché está vacío
-    if (e.cachedPath.empty()) {
-        needRecalc = true;
-    }
-    
-    // Recalcular periódicamente (pero con intervalo más largo)
-    if (e.pathRecalcTimer >= PATH_RECALC_INTERVAL) {
-        needRecalc = true;
-        e.pathRecalcTimer = 0.0f;
-    }
-    
-    // OPTIMIZACIÓN 3: Actualizar caché cuando el enemigo se mueve
-    if (e.lastEnemyR != e.r || e.lastEnemyC != e.c) {
-        // Remover pasos ya completados del caché
-        while (!e.cachedPath.empty()) {
-            Point& front = e.cachedPath.front();
-            if (front.r == e.r && front.c == e.c) {
-                e.cachedPath.erase(e.cachedPath.begin());
-            } else {
-                break;
-            }
-        }
-        e.lastEnemyR = e.r;
-        e.lastEnemyC = e.c;
-    }
-    
-    // Recalcular si es necesario
-    if (needRecalc) {
-        e.cachedPath = ComputePathAStar(e.r, e.c, targetR, targetC);
-        e.lastPlayerR = targetR;
-        e.lastPlayerC = targetC;
-        e.lastEnemyR = e.r;
-        e.lastEnemyC = e.c;
-        e.pathRecalcTimer = 0.0f;
-    }
-    
-    // Retornar siguiente paso
-    if (!e.cachedPath.empty()) {
-        return e.cachedPath.front();
-    }
-    
-    // Sin camino, quedarse en lugar
-    return {e.r, e.c};
-}
 
-// Mantener compatibilidad con función anterior
-static Point GetNextStepBFS(int startR, int startC, int targetR, int targetC) {
-    // Redirigir a A*
-    Enemy tempEnemy;
-    tempEnemy.r = startR;
-    tempEnemy.c = startC;
-    tempEnemy.lastPlayerR = -1;
-    tempEnemy.lastPlayerC = -1;
-    tempEnemy.lastEnemyR = startR;
-    tempEnemy.lastEnemyC = startC;
-    tempEnemy.pathRecalcTimer = 999.0f; // Forzar recálculo
-    
-    return GetNextStepAStar(tempEnemy, targetR, targetC, 0.0f);
+    if (!found) return { startR, startC }; // No hay camino
+
+    // Reconstruir camino desde el Target hacia atrás hasta llegar al hijo del Start
+    Point curr = { targetR, targetC };
+    while (true) {
+        Point p = parent[curr.r][curr.c];
+        if (p.r == startR && p.c == startC) {
+            return curr; // Este es el siguiente paso inmediato
+        }
+        curr = p;
+    }
 }
 
 static void SpawnEnemies(glm::vec3 playerPos) {
@@ -1070,13 +1215,14 @@ int main() {
     wallHallTex[5] = loadTexture("textures/polipa6.png");
 
     // detecta algunos segmentos de pared estrechos y márcalos para usar la textura indie
-    struct IndieSeg { int startR; int startC; int dir; int len; }; // dir:0=horizontal(segmento a lo largo de las columnas, atado a la fila del suelo),1=vertical(segmento a lo largo de las filas, atado a la columna del suelo)
-    std::vector<IndieSeg> indieSegs;
+    // IndieSeg ya está definido globalmente
+    // Usar vector global para que PrecomputeWallTextures pueda acceder
+    g_indieSegs.clear();
     const int MAX_INDIE = 4;
     const int NARROW_THRESHOLD = 2; // longitud de segmento <= umbral considerado "estrecho"
 
-    for (int rr = 0; rr < MAP_H && (int)indieSegs.size() < MAX_INDIE; rr++) {
-        for (int cc = 0; cc < MAP_W && (int)indieSegs.size() < MAX_INDIE; cc++) {
+    for (int rr = 0; rr < MAP_H && (int)g_indieSegs.size() < MAX_INDIE; rr++) {
+        for (int cc = 0; cc < MAP_W && (int)g_indieSegs.size() < MAX_INDIE; cc++) {
             if (!IsFloor(rr, cc)) continue;
             // pared horizontal sobre esta celda de suelo (facing north)
             if (!InBounds(rr - 1, cc) || IsWall(rr - 1, cc)) {
@@ -1086,9 +1232,9 @@ int main() {
                 int c2 = startC;
                 while (c2 < MAP_W && IsFloor(rr, c2) && (!InBounds(rr - 1, c2) || IsWall(rr - 1, c2))) { len++; c2++; }
                 // only mark segments that are exactly NARROW_THRESHOLD long (pairs)
-                if (len == NARROW_THRESHOLD) indieSegs.push_back({ rr, startC,0, len });
+                if (len == NARROW_THRESHOLD) g_indieSegs.push_back({ rr, startC,0, len });
             }
-            if ((int)indieSegs.size() >= MAX_INDIE) break;
+            if ((int)g_indieSegs.size() >= MAX_INDIE) break;
 
             // pared vertical a la izquierda de esta celda de suelo (facing west)
             if (!InBounds(rr, cc - 1) || IsWall(rr, cc - 1)) {
@@ -1098,7 +1244,7 @@ int main() {
                 int r2 = startR;
                 while (r2 < MAP_H && IsFloor(r2, cc) && (!InBounds(r2, cc - 1) || IsWall(r2, cc - 1))) { len++; r2++; }
                 // only mark segments that are exactly NARROW_THRESHOLD long (pairs)
-                if (len == NARROW_THRESHOLD) indieSegs.push_back({ startR, cc,1, len });
+                if (len == NARROW_THRESHOLD) g_indieSegs.push_back({ startR, cc,1, len });
             }
         }
     }
@@ -1106,6 +1252,21 @@ int main() {
     // Asegurar que el shader use la unidad de textura0 para 'texture1'
     shader.use();
     shader.setInt("texture1", 0);
+
+    // ===== INICIALIZAR ARRAY GLOBAL DE TEXTURAS PARA BATCHING =====
+    g_allTextures[0] = wallHallTex[0];
+    g_allTextures[1] = wallHallTex[1];
+    g_allTextures[2] = wallHallTex[2];
+    g_allTextures[3] = wallHallTex[3];
+    g_allTextures[4] = wallHallTex[4];
+    g_allTextures[5] = wallHallTex[5];
+    g_allTextures[6] = wallRoomTex;
+    g_allTextures[7] = wallindie1;
+    g_allTextures[8] = wallindie2;
+
+    // ===== PRE-CALCULAR TEXTURAS Y GEOMETRÍA DEL LABERINTO =====
+    PrecomputeWallTextures();
+    BuildMazeGeometry();
 
     bool gameStarted = false;
     bool lastEnter = false;
@@ -1220,6 +1381,9 @@ int main() {
     //  son los shaders por defecto de LearnOpenGL para modelos).
     Shader xenomorphShader("shaders/model_loading.vs", "shaders/model_loading.fs");
 
+    // ===== CACHEAR UNIFORM LOCATIONS PARA OPTIMIZACIÓN =====
+    InitUniformLocations(xenomorphShader.ID);
+
     // CARGAR EL MODELO DEL ALIEN
     // La ruta debe coincidir con tu carpeta: model -> alien -> scene.gltf
     Model xenomorphModel("model/xenomorph/xenomorph.gltf");
@@ -1312,254 +1476,56 @@ int main() {
             shader.setFloat("spotOuterCutOff", 0.0f);
         }
 
-        // ===== DIBUJAR SUELO + PAREDES =====
-        for (int r = 0; r < MAP_H; r++) {
-            for (int c = 0; c < MAP_W; c++) {
-                if (!IsFloor(r, c)) continue;
-
-                glm::vec3 w = CellToWorld(r, c);
-
-                // ----- Suelo -----
-                glBindVertexArray(floorVAO);
-                glm::mat4 model = glm::mat4(1.0f);
-                model = glm::translate(model, glm::vec3(w.x, 0.0f, w.z));
-                model = glm::scale(model, glm::vec3(TILE, 1.0f, TILE));
-                shader.setMat4("model", model);
-
-                shader.setBool("useTexture", true);
-                shader.setBool("useWorldUV", false);
-                shader.setVec2("texScale2", glm::vec2(0.5f, 0.5f));
-                shader.setBool("flipTexY", false);
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, floorRoomTex);
-                shader.setVec3("baseColor", glm::vec3(1.0f));
-                glDrawArrays(GL_TRIANGLES, 0, 6);
-
-                shader.setBool("useTexture", false);
-                shader.setVec2("texScale2", glm::vec2(1.0f, 1.0f));
-
-                // ----- Techo (sin textura) -----
-                glBindVertexArray(floorVAO);
-                glm::mat4 roof = glm::mat4(1.0f);
-                roof = glm::translate(roof, glm::vec3(w.x, WALL_HEIGHT, w.z));
-                roof = glm::scale(roof, glm::vec3(TILE, 1.0f, TILE));
-                shader.setMat4("model", roof);
-                shader.setBool("useTexture", false);
-                shader.setVec3("baseColor", 0.25f, 0.25f, 0.25f);
-                glDrawArrays(GL_TRIANGLES, 0, 6);
-
-                // ----- Paredes (bordes) por cara -----
-                glBindVertexArray(wallVAO);
-                shader.setVec3("baseColor", glm::vec3(0.90f, 0.90f, 0.90f));
-
-                // Norte (r-1)
-                if (!InBounds(r - 1, c) || IsWall(r - 1, c)) {
-                    int nr = r - 1;
-                    int nc = c;
-                    int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
-                    unsigned int wallTex;
-                    if (t == 2) wallTex = wallRoomTex;
-                    else {
-                        // check if this floor cell belongs to a marked indie horizontal segment
-                        bool isIndie = false;
-                        for (const auto& s : indieSegs) {
-                            if (s.dir == 0 && s.startR == r && nc >= s.startC && nc < s.startC + s.len) { isIndie = true; break; }
-                        }
-                        if (isIndie) {
-                            // find which tile of the pair this is and select appropriate indie texture
-                            int chosen = 0; //0 -> first (start),1 -> second
-                            for (const auto& s : indieSegs) {
-                                if (s.dir == 0 && s.startR == r && nc >= s.startC && nc < s.startC + s.len) { chosen = nc - s.startC; break; }
-                            }
-                            wallTex = (chosen == 0) ? wallindie1 : wallindie2;
-                        }
-                        else {
-                            // find start of continuous horizontal wall segment (scan left)
-                            int startC = nc;
-                            while (startC - 1 >= 0 && IsFloor(r, startC - 1) && IsWall(r - 1, startC - 1)) startC--;
-                            int offset = nc - startC;
-                            // reversed sequence:6,5,4,3,2,1 repeating left-to-right
-                            int idx = (5 - (offset % 6) + 6) % 6;
-                            wallTex = wallHallTex[idx];
-                        }
-                    }
-
+        // ===== DIBUJAR LABERINTO OPTIMIZADO (BATCHING) =====
+        // Usar geometría pre-calculada: ~10 draw calls en lugar de ~100,000
+        {
+            glm::mat4 identity = glm::mat4(1.0f);
+            shader.setMat4("model", identity);
+            
+            int batchIdx = 0;
+            for (const auto& batch : mazeBatches) {
+                glBindVertexArray(batch.VAO);
+                
+                // Configurar textura según el tipo de batch
+                if (batchIdx < 9) {
+                    // Paredes con textura
                     shader.setBool("useTexture", true);
                     shader.setBool("useWorldUV", false);
                     shader.setVec2("texScale2", glm::vec2(1.0f, 1.0f));
-                    // flip vertically only for hall textures to fix inverted pattern
-                    shader.setBool("flipTexY", (t == 2) ? false : true);
+                    shader.setBool("flipTexY", false); // Ya se manejó en BuildMazeGeometry
                     glActiveTexture(GL_TEXTURE0);
-                    glBindTexture(GL_TEXTURE_2D, wallTex);
+                    glBindTexture(GL_TEXTURE_2D, batch.textureID);
                     shader.setVec3("baseColor", glm::vec3(1.0f));
-
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(w.x, 0.0f, w.z + TILE * 0.5f));
-                    model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0, 1, 0));
-                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
-                    shader.setMat4("model", model);
-                    glDrawArrays(GL_TRIANGLES, 0, 6);
-
-                    shader.setBool("useTexture", false);
-                }
-
-                // Sur (r+1)
-                if (!InBounds(r + 1, c) || IsWall(r + 1, c)) {
-                    int nr = r + 1;
-                    int nc = c;
-                    int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
-                    unsigned int wallTex;
-                    if (t == 2) wallTex = wallRoomTex;
-                    else {
-                        // check if this floor cell belongs to a marked indie horizontal segment
-                        bool isIndie = false;
-                        for (const auto& s : indieSegs) {
-                            if (s.dir == 0 && s.startR == r && nc >= s.startC && nc < s.startC + s.len) { isIndie = true; break; }
-                        }
-                        if (isIndie) {
-                            // find which tile of the pair this is and select appropriate indie texture
-                            int chosen = 0;
-                            for (const auto& s : indieSegs) {
-                                if (s.dir == 0 && s.startR == r && nc >= s.startC && nc < s.startC + s.len) { chosen = nc - s.startC; break; }
-                            }
-                            wallTex = (chosen == 0) ? wallindie1 : wallindie2;
-                        }
-                        else {
-                            // find start of continuous horizontal wall segment (scan left)
-                            int startC = nc;
-                            while (startC - 1 >= 0 && IsFloor(r, startC - 1) && IsWall(r + 1, startC - 1)) startC--;
-                            int offset = nc - startC;
-                            int idx = (5 - (offset % 6) + 6) % 6;
-                            wallTex = wallHallTex[idx];
-                        }
-                    }
-
+                } else if (batchIdx == 9) {
+                    // Suelo
                     shader.setBool("useTexture", true);
                     shader.setBool("useWorldUV", false);
-                    shader.setVec2("texScale2", glm::vec2(1.0f, 1.0f));
-                    shader.setBool("flipTexY", (t == 2) ? false : true);
+                    shader.setVec2("texScale2", glm::vec2(0.5f, 0.5f));
+                    shader.setBool("flipTexY", false);
                     glActiveTexture(GL_TEXTURE0);
-                    glBindTexture(GL_TEXTURE_2D, wallTex);
+                    glBindTexture(GL_TEXTURE_2D, floorRoomTex);
                     shader.setVec3("baseColor", glm::vec3(1.0f));
-
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(w.x, 0.0f, w.z - TILE * 0.5f));
-                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
-                    shader.setMat4("model", model);
-                    glDrawArrays(GL_TRIANGLES, 0, 6);
-
+                } else {
+                    // Techo (sin textura)
                     shader.setBool("useTexture", false);
+                    shader.setVec3("baseColor", glm::vec3(0.25f, 0.25f, 0.25f));
                 }
-
-                // Oeste (c-1)
-                if (!InBounds(r, c - 1) || IsWall(r, c - 1)) {
-                    int nr = r;
-                    int nc = c - 1;
-                    int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
-                    unsigned int wallTex;
-                    if (t == 2) wallTex = wallRoomTex;
-                    else {
-                        // check if this floor cell belongs to a marked indie vertical segment
-                        bool isIndie = false;
-                        for (const auto& s : indieSegs) {
-                            if (s.dir == 1 && s.startC == c && nr >= s.startR && nr < s.startR + s.len) { isIndie = true; break; }
-                        }
-                        if (isIndie) {
-                            // find which tile of the pair this is and select appropriate indie texture
-                            int chosen = 0;
-                            for (const auto& s : indieSegs) {
-                                if (s.dir == 1 && s.startC == c && nr >= s.startR && nr < s.startR + s.len) { chosen = nr - s.startR; break; }
-                            }
-                            wallTex = (chosen == 0) ? wallindie1 : wallindie2;
-                        }
-                        else {
-                            // find start of continuous vertical wall segment (scan up)
-                            int startR = nr;
-                            while (startR - 1 >= 0 && IsFloor(startR - 1, c) && IsWall(startR - 1, c - 1)) startR--;
-                            int offset = nr - startR;
-                            int idx = (5 - (offset % 6) + 6) % 6;
-                            wallTex = wallHallTex[idx];
-                        }
-                    }
-
-                    shader.setBool("useTexture", true);
-                    shader.setBool("useWorldUV", false);
-                    shader.setVec2("texScale2", glm::vec2(1.0f, 1.0f));
-                    shader.setBool("flipTexY", (t == 2) ? false : true);
-                    glActiveTexture(GL_TEXTURE0);
-                    glBindTexture(GL_TEXTURE_2D, wallTex);
-                    shader.setVec3("baseColor", glm::vec3(1.0f));
-
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(w.x - TILE * 0.5f, 0.0f, w.z));
-                    model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(0, 1, 0));
-                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
-                    shader.setMat4("model", model);
-                    glDrawArrays(GL_TRIANGLES, 0, 6);
-
-                    shader.setBool("useTexture", false);
-                }
-
-                // Este (c+1)
-                if (!InBounds(r, c + 1) || IsWall(r, c + 1)) {
-                    int nr = r;
-                    int nc = c + 1;
-                    int t = InBounds(nr, nc) ? WallType(nr, nc) : 0;
-                    unsigned int wallTex;
-                    if (t == 2) wallTex = wallRoomTex;
-                    else {
-                        // check if this floor cell belongs to a marked indie vertical segment
-                        bool isIndie = false;
-                        for (const auto& s : indieSegs) {
-                            if (s.dir == 1 && s.startC == c && nr >= s.startR && nr < s.startR + s.len) { isIndie = true; break; }
-                        }
-                        if (isIndie) {
-                            // find which tile of the pair this is and select appropriate indie texture
-                            int chosen = 0;
-                            for (const auto& s : indieSegs) {
-                                if (s.dir == 1 && s.startC == c && nr >= s.startR && nr < s.startR + s.len) { chosen = nr - s.startR; break; }
-                            }
-                            wallTex = (chosen == 0) ? wallindie1 : wallindie2;
-                        }
-                        else {
-                            // find start of continuous vertical wall segment (scan up)
-                            int startR = nr;
-                            while (startR - 1 >= 0 && IsFloor(startR - 1, c) && IsWall(startR - 1, c + 1)) startR--;
-                            int offset = nr - startR;
-                            int idx = (5 - (offset % 6) + 6) % 6;
-                            wallTex = wallHallTex[idx];
-                        }
-                    }
-
-                    shader.setBool("useTexture", true);
-                    shader.setBool("useWorldUV", false);
-                    shader.setVec2("texScale2", glm::vec2(1.0f, 1.0f));
-                    shader.setBool("flipTexY", (t == 2) ? false : true);
-                    glActiveTexture(GL_TEXTURE0);
-                    glBindTexture(GL_TEXTURE_2D, wallTex);
-                    shader.setVec3("baseColor", glm::vec3(1.0f));
-
-                    model = glm::mat4(1.0f);
-                    model = glm::translate(model, glm::vec3(w.x + TILE * 0.5f, 0.0f, w.z));
-                    model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0, 1, 0));
-                    model = glm::scale(model, glm::vec3(TILE, WALL_HEIGHT, 1.0f));
-                    shader.setMat4("model", model);
-                    glDrawArrays(GL_TRIANGLES, 0, 6);
-
-                    shader.setBool("useTexture", false);
-                }
-
+                
+                glDrawArrays(GL_TRIANGLES, 0, batch.vertexCount);
+                batchIdx++;
             }
+            
+            shader.setBool("useTexture", false);
         }
 
-        // ================= ACTUALIZAR ENEMIGOS (IA con A*) =================
-        // Algoritmo A* optimizado con persecución inteligente
+        // ================= ACTUALIZAR ENEMIGOS (IA con BFS) =================
+        // Algoritmo BFS para pathfinding
         Point playerGrid = WorldToCell(camera.Position);
 
         Enemy* enemies[] = { &enemy1/*, &enemy2*/};
         for (Enemy* e : enemies) {
-            // Usar A* optimizado con caché y persecución directa
-            Point nextCell = GetNextStepAStar(*e, playerGrid.r, playerGrid.c, deltaTime);
+            // Usar BFS para encontrar el siguiente paso
+            Point nextCell = GetNextStepBFS(e->r, e->c, playerGrid.r, playerGrid.c);
 
             // 2. Obtener posición world del centro de esa casilla
             glm::vec3 targetWorld = CellToWorld(nextCell.r, nextCell.c);
@@ -1609,11 +1575,13 @@ int main() {
         xenomorphShader.setVec3("lightPos", lightPos);
         xenomorphShader.setVec3("viewPos", camera.Position);
 
-        // Pasar las matrices de huesos al shader
+        // Pasar las matrices de huesos al shader (OPTIMIZADO: usando uniform locations cacheados)
         xenomorphShader.setBool("useAnimation", true);
         auto transforms = animator.GetFinalBoneMatrices();
-        for (int i = 0; i < transforms.size() && i < 250; ++i) {
-            xenomorphShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", transforms[i]);
+        for (int i = 0; i < (int)transforms.size() && i < 250; ++i) {
+            if (boneMatrixLocs[i] >= 0) {
+                glUniformMatrix4fv(boneMatrixLocs[i], 1, GL_FALSE, glm::value_ptr(transforms[i]));
+            }
         }
 
         for (Enemy* e : enemies) {
@@ -1826,7 +1794,7 @@ int main() {
         }
 
         glfwSwapBuffers(window);
-        glfwPollEvents();
+        // glfwPollEvents() ya se llama al inicio del loop, no duplicar aquí
     }
 
     glfwTerminate();

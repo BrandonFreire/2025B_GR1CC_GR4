@@ -5,9 +5,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include <learnopengl/shader.h>
+#include <learnopnegl/shader.h>
 
-#define STB_IMAGE_IMPLEMENTATION
+//#define STB_IMAGE_IMPLEMENTATION
 #include <learnopengl/stb_image.h>
 
 #include <iostream>
@@ -64,6 +64,16 @@ const float LIGHT_CUBE_SCALE = 0.50f;
 // ================= LUZ =================
 glm::vec3 lightPos(0.0f, 6.0f, 0.0f);
 bool linternaEncendida = false;
+
+// ================= MINIMAPA =================
+const int MINIMAP_RADIUS = 8;
+const float MINIMAP_SIZE = 200.0f;
+const float MINIMAP_MARGIN = 20.0f;
+const float MINIMAP_CELL_SIZE = MINIMAP_SIZE / (MINIMAP_RADIUS * 2 + 1);
+
+// ================= MOVIMIENTO ALEATORIO ENEMY1 =================
+Point enemy1RandomTarget = {0, 0};
+bool enemy1HasTarget = false;
 
 // ================= MODO VISTA AEREA =================
 bool modoAereo = false;
@@ -481,6 +491,18 @@ static Point GetNextStepBFS(int startR, int startC, int targetR, int targetC) {
     }
 }
 
+// Función para obtener un objetivo aleatorio válido en el laberinto
+static Point GetRandomFloorCell() {
+    for (int i = 0; i < 100; i++) {
+        int r = rand() % MAP_H;
+        int c = rand() % MAP_W;
+        if (IsFloor(r, c)) {
+            return {r, c};
+        }
+    }
+    return {enemy1.r, enemy1.c};
+}
+
 static void SpawnEnemies(glm::vec3 playerPos) {
     Point pCell = WorldToCell(playerPos);
     int spawnedCount = 0;
@@ -666,6 +688,29 @@ int main() {
     // --- Pantalla de inicio ---
     Shader screenShader("shaders/screen.vs", "shaders/screen.fs");
     if (screenShader.ID == 0) screenShader = Shader("shaders/screen.vs", "shaders/screen.fs");
+
+    // --- Shader del minimapa ---
+    Shader minimapShader("shaders/minimap.vs", "shaders/minimap.fs");
+
+    // VAO para el minimapa
+    float minimapQuad[] = {
+        0.0f, 0.0f,
+        1.0f, 0.0f,
+        1.0f, 1.0f,
+        1.0f, 1.0f,
+        0.0f, 1.0f,
+        0.0f, 0.0f
+    };
+    unsigned int minimapVAO, minimapVBO;
+    glGenVertexArrays(1, &minimapVAO);
+    glGenBuffers(1, &minimapVBO);
+    glBindVertexArray(minimapVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, minimapVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(minimapQuad), minimapQuad, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glBindVertexArray(0);
+
     float screenQuad[] = {
         // positions // texcoords
         -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
@@ -690,6 +735,7 @@ int main() {
     unsigned int startTex = loadTexture("textures/portada.png");
     screenShader.use();
     screenShader.setInt("screenTex", 0);
+
     unsigned int wallindie1 = loadTexture("textures/Finalpainsano1.png");
     unsigned int wallindie2 = loadTexture("textures/Finalpainsano2.png");
 
@@ -874,13 +920,16 @@ int main() {
         // Poll events first so key state is updated for start screen
         glfwPollEvents();
 
-        // check enter to start
-        bool enter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
-        if (enter && !lastEnter) gameStarted = true;
-        lastEnter = enter;
-
+        // ===== PANTALLA DE INICIO (PORTADA) =====
         if (!gameStarted) {
-            // render only the start screen
+            bool enter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
+            if (enter && !lastEnter) {
+                gameStarted = true;
+                lastFrame = (float)glfwGetTime();
+            }
+            lastEnter = enter;
+
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             screenShader.use();
             glBindVertexArray(screenVAO);
@@ -910,7 +959,7 @@ int main() {
         shader.use();
         shader.setMat4("projection", projection);
         shader.setMat4("view", view);
-        shader.setVec3("lightPos", lightPos);
+        shader.setVec3("lightPos", glm::vec3(0.0f, -1000.0f, 0.0f)); // Luz global desactivada
         shader.setVec3("viewPos", camera.Position);
 
         // compute wide stripe width for hall textures (much thicker stripes)
@@ -918,6 +967,7 @@ int main() {
         const int HALL_STRIPE_THICKNESS = 3; // make stripes3x wider
         hallStripeWidth = std::min(MAP_W, hallStripeWidth * HALL_STRIPE_THICKNESS);
 
+        // Linterna simple sin parpadeo
         shader.setInt("linterna", linternaEncendida);
         if (linternaEncendida) {
             shader.setVec3("spotLightPos", camera.Position);
@@ -1174,43 +1224,56 @@ int main() {
         }
 
         // ================= ACTUALIZAR ENEMIGOS (IA) =================
-        // Haremos que recalcule el camino frame a frame hacia el centro de la siguiente celda
         Point playerGrid = WorldToCell(camera.Position);
 
-        Enemy* enemies[] = { &enemy1, &enemy2 };
-        for (Enemy* e : enemies) {
-            // 1. Calcular siguiente casilla ideal con BFS
-            Point nextCell = GetNextStepBFS(e->r, e->c, playerGrid.r, playerGrid.c);
-
-            // 2. Obtener posición world del centro de esa casilla
-            glm::vec3 targetWorld = CellToWorld(nextCell.r, nextCell.c);
-
-            // 3. Moverse suavemente hacia ese objetivo
-            glm::vec3 dir = targetWorld - e->pos;
-            if (glm::length(dir) > 0.01f) {
-                dir = glm::normalize(dir);
-                e->pos += dir * e->speed * deltaTime;
+        // ===== ENEMY1: Movimiento aleatorio =====
+        {
+            if (!enemy1HasTarget || (enemy1.r == enemy1RandomTarget.r && enemy1.c == enemy1RandomTarget.c)) {
+                enemy1RandomTarget = GetRandomFloorCell();
+                enemy1HasTarget = true;
             }
 
-            // 4. Si está muy cerca del centro de la casilla objetivo, actualizar su grid lógico
-            if (glm::distance(e->pos, targetWorld) < 0.1f) {
-                e->r = nextCell.r;
-                e->c = nextCell.c;
+            Point nextCell = GetNextStepBFS(enemy1.r, enemy1.c, enemy1RandomTarget.r, enemy1RandomTarget.c);
+            glm::vec3 targetWorld = CellToWorld(nextCell.r, nextCell.c);
+
+            glm::vec3 dir = targetWorld - enemy1.pos;
+            if (glm::length(dir) > 0.01f) {
+                dir = glm::normalize(dir);
+                enemy1.pos += dir * enemy1.speed * deltaTime;
+            }
+
+            if (glm::distance(enemy1.pos, targetWorld) < 0.1f) {
+                enemy1.r = nextCell.r;
+                enemy1.c = nextCell.c;
+            }
+        }
+
+        // ===== ENEMY2: Persigue al jugador =====
+        {
+            Point nextCell = GetNextStepBFS(enemy2.r, enemy2.c, playerGrid.r, playerGrid.c);
+            glm::vec3 targetWorld = CellToWorld(nextCell.r, nextCell.c);
+
+            glm::vec3 dir = targetWorld - enemy2.pos;
+            if (glm::length(dir) > 0.01f) {
+                dir = glm::normalize(dir);
+                enemy2.pos += dir * enemy2.speed * deltaTime;
+            }
+
+            if (glm::distance(enemy2.pos, targetWorld) < 0.1f) {
+                enemy2.r = nextCell.r;
+                enemy2.c = nextCell.c;
             }
         }
 
         // ================= DIBUJAR ENEMIGOS =================
-        // Usamos el shader principal (tiene luz y sombras)
         shader.use();
-
-        // Color rojo amenazante para los enemigos
         shader.setVec3("baseColor", glm::vec3(0.8f, 0.0f, 0.0f));
 
-        for (Enemy* e : enemies) {
-            glBindVertexArray(cubeVAO); // Reusamos el cubo de la luz
+        Enemy* enemiesToDraw[] = { &enemy1, &enemy2 };
+        for (Enemy* e : enemiesToDraw) {
+            glBindVertexArray(cubeVAO);
             glm::mat4 model = glm::mat4(1.0f);
             model = glm::translate(model, e->pos);
-            // Hacemos el enemigo un poco más pequeño que el Tile para que no atraviese paredes visualmente
             model = glm::scale(model, glm::vec3(0.4f));
             shader.setMat4("model", model);
             glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -1233,25 +1296,179 @@ int main() {
         glDrawArrays(GL_TRIANGLES,0,36);
         */
 
-        // ================= RECOLECCIÓN Y DIBUJO DE CUBOS COLECCIONABLES =================
+        // ================= RECOLECCIÓN Y DIBUJO DE CUBOS COLECCIONABLES (ANTORCHAS) =================
         CheckCollectibles(camera.Position, window);
 
-        // Dibujar solo si hay cubos no recogidos
-        if (collectibles.size() > 0) {
-            glBindVertexArray(cubeVAO);
-            shader.use();
-            shader.setVec3("baseColor", glm::vec3(0.8f, 0.8f, 0.0f)); // Color amarillo para los cubos
+        // ===== CONFIGURAR LUCES DE ANTORCHA =====
+        // Las antorchas emiten luz naranja/amarilla tipo fuego
+        {
+            float t = (float)glfwGetTime();
+
+            // Parpadeo de intensidad tipo fuego
+            float flicker1 = sin(t * 15.0f) * 0.1f;
+            float flicker2 = sin(t * 23.0f) * 0.08f;
+            float flicker3 = sin(t * 7.0f) * 0.15f;
+            float torchFlicker = 0.7f + flicker1 + flicker2 + flicker3;
+            float torchIntensity = torchFlicker * 2.5f;
+
+            // Color de fuego variable
+            float colorShift = 0.5f + 0.5f * sin(t * 5.0f);
+            glm::vec3 torchColor = glm::mix(
+                glm::vec3(1.0f, 0.4f, 0.1f),  // Naranja
+                glm::vec3(1.0f, 0.7f, 0.2f),  // Amarillo
+                colorShift
+            ) * torchIntensity;
+
+            // Configurar hasta 8 luces de antorcha en el shader
+            int torchIndex = 0;
+            const int MAX_TORCH_LIGHTS = 8;
 
             for (const auto& col : collectibles) {
-                if (col.collected) continue; // Solo dibujar los no recogidos
+                if (col.collected || torchIndex >= MAX_TORCH_LIGHTS) continue;
+
+                // Posición de luz ligeramente arriba del cubo
+                glm::vec3 torchLightPos = col.pos + glm::vec3(0.0f, 0.3f, 0.0f);
+
+                // Enviar al shader (nombre correcto: torchPositions)
+                std::string uniform = "torchPositions[" + std::to_string(torchIndex) + "]";
+                shader.setVec3(uniform, torchLightPos);
+                torchIndex++;
+            }
+
+            // Informar cuántas antorchas hay activas
+            shader.setInt("numTorchLights", torchIndex);
+            shader.setVec3("torchColor", torchColor);
+            shader.setFloat("torchIntensity", torchIntensity); // Intensidad variable
+        }
+
+        // ===== DIBUJAR ANTORCHAS CON EFECTO DE BRILLO =====
+        if (!collectibles.empty()) {
+            float t = (float)glfwGetTime();
+
+            // Parpadeo de intensidad tipo fuego para el brillo visual
+            float flicker1 = sin(t * 15.0f) * 0.1f;
+            float flicker2 = sin(t * 23.0f) * 0.08f;
+            float flicker3 = sin(t * 7.0f) * 0.15f;
+            float torchFlicker = 0.85f + flicker1 + flicker2 + flicker3;
+
+            // Pulso adicional
+            float pulse = 0.85f + 0.15f * sin(t * 3.0f);
+
+            // Color de fuego variable
+            float colorShift = 0.5f + 0.5f * sin(t * 5.0f);
+            glm::vec3 baseFireColor = glm::mix(
+                glm::vec3(1.0f, 0.3f, 0.05f),  // Rojo-naranja
+                glm::vec3(1.0f, 0.6f, 0.1f),   // Naranja-amarillo
+                colorShift
+            );
+
+            // Color final con brillo intenso
+            glm::vec3 torchEmissive = baseFireColor * torchFlicker * pulse * 3.0f;
+
+            glBindVertexArray(cubeVAO);
+            shader.use();
+            shader.setBool("useTexture", false);
+
+            for (const auto& col : collectibles) {
+                if (col.collected) continue;
+
+                // Movimiento sutil de la llama
+                float yOffset = 0.03f * sin(t * 8.0f + col.pos.x * 2.0f);
 
                 glm::mat4 model = glm::mat4(1.0f);
-                model = glm::translate(model, col.pos);
-                model = glm::scale(model, glm::vec3(0.2f)); // Tamaño más pequeño para los cubos
+                model = glm::translate(model, col.pos + glm::vec3(0.0f, yOffset, 0.0f));
+
+                // Escala variable para simular llama
+                float scaleFlicker = 0.22f + 0.04f * sin(t * 12.0f + col.pos.z);
+                model = glm::scale(model, glm::vec3(scaleFlicker));
+
                 shader.setMat4("model", model);
+                shader.setVec3("baseColor", torchEmissive);
 
                 glDrawArrays(GL_TRIANGLES, 0, 36);
             }
+        }
+
+        // ================= DIBUJAR MINIMAPA (solo si linterna encendida) =================
+        if (linternaEncendida) {
+            glDisable(GL_DEPTH_TEST);
+
+            Point playerCell = WorldToCell(camera.Position);
+
+            float mapX = SCR_WIDTH - MINIMAP_SIZE - MINIMAP_MARGIN;
+            float mapY = SCR_HEIGHT - MINIMAP_SIZE - MINIMAP_MARGIN;
+
+            glm::mat4 minimapProj = glm::ortho(0.0f, (float)SCR_WIDTH, 0.0f, (float)SCR_HEIGHT);
+
+            minimapShader.use();
+            minimapShader.setMat4("projection", minimapProj);
+            glBindVertexArray(minimapVAO);
+
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+            // Fondo del minimapa
+            minimapShader.setVec3("color", glm::vec3(0.1f, 0.1f, 0.15f));
+            minimapShader.setVec2("offset", glm::vec2(mapX - 5, mapY - 5));
+            minimapShader.setVec2("scale", glm::vec2(MINIMAP_SIZE + 10, MINIMAP_SIZE + 10));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            // Dibujar celdas del minimapa
+            for (int dr = -MINIMAP_RADIUS; dr <= MINIMAP_RADIUS; dr++) {
+                for (int dc = -MINIMAP_RADIUS; dc <= MINIMAP_RADIUS; dc++) {
+                    int r = playerCell.r + dr;
+                    int c = playerCell.c + dc;
+
+                    float cellX = mapX + (MINIMAP_RADIUS - dc) * MINIMAP_CELL_SIZE;
+                    float cellY = mapY + (MINIMAP_RADIUS - dr) * MINIMAP_CELL_SIZE;
+
+                    glm::vec3 cellColor;
+
+                    if (!InBounds(r, c)) {
+                        cellColor = glm::vec3(0.15f, 0.15f, 0.15f);
+                    } else if (IsWall(r, c)) {
+                        cellColor = glm::vec3(0.4f, 0.4f, 0.45f);
+                    } else if (IsFloor(r, c)) {
+                        cellColor = glm::vec3(0.2f, 0.15f, 0.1f);
+                    } else if (Cell(r, c) == 'E') {
+                        cellColor = glm::vec3(0.0f, 0.8f, 0.0f);
+                    } else {
+                        cellColor = glm::vec3(0.1f, 0.1f, 0.1f);
+                    }
+
+                    minimapShader.setVec3("color", cellColor);
+                    minimapShader.setVec2("offset", glm::vec2(cellX, cellY));
+                    minimapShader.setVec2("scale", glm::vec2(MINIMAP_CELL_SIZE - 1, MINIMAP_CELL_SIZE - 1));
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                }
+            }
+
+            // Dibujar jugador en el centro
+            float playerX = mapX + MINIMAP_RADIUS * MINIMAP_CELL_SIZE;
+            float playerY = mapY + MINIMAP_RADIUS * MINIMAP_CELL_SIZE;
+
+            minimapShader.setVec3("color", glm::vec3(0.0f, 1.0f, 1.0f));
+            minimapShader.setVec2("offset", glm::vec2(playerX + 2, playerY + 2));
+            minimapShader.setVec2("scale", glm::vec2(MINIMAP_CELL_SIZE - 5, MINIMAP_CELL_SIZE - 5));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            // Borde del minimapa
+            minimapShader.setVec3("color", glm::vec3(0.6f, 0.6f, 0.7f));
+            minimapShader.setVec2("offset", glm::vec2(mapX - 5, mapY + MINIMAP_SIZE + 3));
+            minimapShader.setVec2("scale", glm::vec2(MINIMAP_SIZE + 10, 3));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(mapX - 5, mapY - 8));
+            minimapShader.setVec2("scale", glm::vec2(MINIMAP_SIZE + 10, 3));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(mapX - 8, mapY - 5));
+            minimapShader.setVec2("scale", glm::vec2(3, MINIMAP_SIZE + 10));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(mapX + MINIMAP_SIZE + 3, mapY - 5));
+            minimapShader.setVec2("scale", glm::vec2(3, MINIMAP_SIZE + 10));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            glDisable(GL_BLEND);
+            glEnable(GL_DEPTH_TEST);
         }
 
         glfwSwapBuffers(window);

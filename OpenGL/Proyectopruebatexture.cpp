@@ -871,7 +871,7 @@ static void InitUniformLocations(unsigned int xenomorphShaderID) {
 }
 
 // ALGORITMO BFS: Encuentra el siguiente paso inmediato hacia el objetivo
-// Retorna la coordinada (r, c) a la que el enemigo debe moverse
+// Retorna la coordenada (r, c) a la que el enemigo debe moverse
 static Point GetNextStepBFS(int startR, int startC, int targetR, int targetC) {
     // Si ya está en el destino, quedarse ahí
     if (startR == targetR && startC == targetC) return { startR, startC };
@@ -909,7 +909,7 @@ static Point GetNextStepBFS(int startR, int startC, int targetR, int targetC) {
             int nr = curr.r + dr[i];
             int nc = curr.c + dc[i];
 
-            // Validar límites y que sea suelo (IsFloor es tu función existente)
+            // Validar límites y que sea suelo
             if (InBounds(nr, nc) && !visited[nr][nc] && IsFloor(nr, nc)) {
                 visited[nr][nc] = true;
                 parent[nr][nc] = curr;
@@ -941,7 +941,7 @@ static void SpawnEnemies(glm::vec3 playerPos) {
     enemy1.c = fixedC;
     enemy1.pos = CellToWorld(fixedR, fixedC);
 
-    // Asegurar que esté en el suelo (ajuste de altura si es necesario)
+    // Asegurar que esté en el suelo 
     enemy1.pos.y = 0.0f;
 
     // Reiniciar variables de IA para que empiece limpio
@@ -1422,40 +1422,38 @@ int main() {
     camera.Pitch = 0.0f;
     camera.ProcessMouseMovement(0, 0); // Actualizar vectores
 
-
-    // === NUEVO: INICIALIZAR ENEMIGOS ===
+    // =====================================================================
+    // INICIALIZAR ENEMIGOS
+    // =====================================================================
     srand((unsigned int)glfwGetTime()); // Semilla random
     SpawnEnemies(camera.Position);
 
-    // USAR UN SHADER ESTÁNDAR PARA MODELOS 3D
-    // (Asegúrate de tener "model_loading.vs" y "model_loading.fs" en tu carpeta shaders,
-    //  son los shaders por defecto de LearnOpenGL para modelos).
+    // SHADER PARA MODELOS 3D
     Shader xenomorphShader("shaders/model_loading.vs", "shaders/model_loading.fs");
 
     // ===== CACHEAR UNIFORM LOCATIONS PARA OPTIMIZACIÓN =====
     InitUniformLocations(xenomorphShader.ID);
 
+    // =====================================================================
     // CARGAR EL MODELO DEL ALIEN
-    // La ruta debe coincidir con tu carpeta: model -> alien -> scene.gltf
     Model xenomorphModel("model/xenomorph/xenomorph.gltf");
 
-    // CARGAR LA ANIMACIÓN (usa el mismo archivo GLTF)
+    // CARGAR LA ANIMACIÓN
     Animation xenomorphAnimation("model/xenomorph/xenomorph.gltf", &xenomorphModel);
 
     // CREAR EL ANIMATOR
     Animator animator(&xenomorphAnimation);
 
-    // ... después de cargar xenomorphModel y animator ...
-
-    // 1. CARGAR EL MODELO XENO RAVEN
-    // Asegúrate de que la ruta sea correcta
+    // CARGAR EL MODELO XENO RAVEN
     Model xenoRavenModel("model/xeno_raven/xeno_raven.gltf");
 
     // CARGAR MODELO DEL HUEVO
     Model alienEggModel("model/alien_egg/alien_egg.gltf");
 
-    // 2. CONFIGURAR SU POSICIÓN
+    // CONFIGURAR SU POSICIÓN
     SetupXenoStatic();
+
+    // =====================================================================
 
     // Spawnear coleccionables y crear un preview extra junto al jugador
     SpawnCollectibles(camera.Position);
@@ -1507,7 +1505,7 @@ int main() {
             bool enter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
 
             if (enter && !enterPrev) {
-                ResetGame();   // <<<<<< AQUÍ SE RESETEA TODO
+                ResetGame();
             }
             enterPrev = enter;
 
@@ -1537,7 +1535,7 @@ int main() {
             bool enter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS;
 
             if (enter && !enterPrevWin) {
-                ResetGame();   // mismo reset que Game Over
+                ResetGame();   
                 gameWin = false;
             }
             enterPrevWin = enter;
@@ -1633,7 +1631,7 @@ int main() {
             shader.setFloat("spotOuterCutOff", 0.0f);
         }
 
-        // ===== CONFIGURAR LUCES DE ANTORCHA ANTES DE DIBUJAR EL LABERINTO =====
+        // ===== CONFIGURAR LUCES DE ANTORCHA =====
         // Las antorchas emiten luz naranja/amarilla tipo fuego
         {
             float t = (float)glfwGetTime();
@@ -1643,7 +1641,7 @@ int main() {
             float flicker2 = sin(t * 23.0f) * 0.08f;
             float flicker3 = sin(t * 7.0f) * 0.15f;
             float torchFlicker = 0.7f + flicker1 + flicker2 + flicker3;
-            float torchIntensity = torchFlicker * 1.5f; // Reducido de 2.5f a 1.5f
+            float torchIntensity = torchFlicker * 1.0f;
 
             // Color de fuego variable
             float colorShift = 0.5f + 0.5f * sin(t * 5.0f);
@@ -1675,8 +1673,8 @@ int main() {
             shader.setFloat("torchIntensity", torchIntensity);
         }
 
-        // ===== DIBUJAR LABERINTO OPTIMIZADO (BATCHING) =====
-        // Usar geometría pre-calculada: ~10 draw calls en lugar de ~100,000
+        // =====================================================================
+        // DIBUJAR LABERINTO 
         {
             glm::mat4 identity = glm::mat4(1.0f);
             shader.setMat4("model", identity);
@@ -1691,7 +1689,7 @@ int main() {
                     shader.setBool("useTexture", true);
                     shader.setBool("useWorldUV", false);
                     shader.setVec2("texScale2", glm::vec2(1.0f, 1.0f));
-                    shader.setBool("flipTexY", false); // Ya se manejó en BuildMazeGeometry
+                    shader.setBool("flipTexY", false); // Se manejó en BuildMazeGeometry
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, batch.textureID);
                     shader.setVec3("baseColor", glm::vec3(1.0f));
@@ -1719,11 +1717,12 @@ int main() {
             shader.setBool("useTexture", false);
         }
 
-        // ================= ACTUALIZAR ENEMIGOS (IA con BFS) =================
+        // =====================================================================
+        // ACTUALIZAR ENEMIGOS
         // Algoritmo BFS para pathfinding
         Point playerGrid = WorldToCell(camera.Position);
 
-        Enemy* enemies[] = { &enemy1/*, &enemy2*/ };
+        Enemy* enemies[] = { &enemy1};
         for (Enemy* e : enemies) {
             // Usar BFS para encontrar el siguiente paso
             Point nextCell = GetNextStepBFS(e->r, e->c, playerGrid.r, playerGrid.c);
@@ -1754,7 +1753,7 @@ int main() {
                 }
             }
 
-            // SIEMPRE calcular la rotación hacia el jugador (no hacia donde se mueve)
+            // SIEMPRE calcular la rotación hacia el jugador
             glm::vec3 dirToPlayer = camera.Position - e->pos;
             dirToPlayer.y = 0.0f;  // Ignorar diferencia de altura
             if (glm::length(dirToPlayer) > 0.01f) {
@@ -1774,7 +1773,9 @@ int main() {
             }
         }
 
-        // ================= DIBUJAR ENEMIGOS =================
+        // =====================================================================
+        // DIBUJAR ENEMIGOS 
+        // =====================================================================
         animator.UpdateAnimation(deltaTime);
 
         xenomorphShader.use();
@@ -1787,7 +1788,8 @@ int main() {
         xenomorphShader.setVec3("lightPos", lightPos);
         xenomorphShader.setVec3("viewPos", camera.Position);
 
-        // ===== PASAR LINTERNA AL SHADER DEL XENOMORPH =====
+        // ====================================================================
+		// Pasar linterna al shader del xenomorfo 
         xenomorphShader.setBool("linterna", linternaEncendida);
         if (linternaEncendida) {
             xenomorphShader.setVec3("spotLightPos", camera.Position);
@@ -1802,7 +1804,7 @@ int main() {
             xenomorphShader.setFloat("spotOuterCutOff", 0.0f);
         }
 
-        // Pasar las matrices de huesos al shader (OPTIMIZADO: usando uniform locations cacheados)
+        // Pasar las matrices de huesos al shader
         xenomorphShader.setBool("useAnimation", true);
         auto transforms = animator.GetFinalBoneMatrices();
         for (int i = 0; i < (int)transforms.size() && i < 250; ++i) {
@@ -1828,23 +1830,23 @@ int main() {
             xenomorphModel.Draw(xenomorphShader);
         }
 
-        // ================= DIBUJAR XENO RAVEN (ESTÁTICO) =================
-        // ================= DIBUJAR XENO RAVEN (ESTÁTICO) =================
+        // =====================================================================
+        // Dibujar XENO RAVEN (Estatua)
         if (xenoStaticActive) {
             xenomorphShader.use();
             xenomorphShader.setBool("useAnimation", false); // Sin animación
 
             glm::mat4 model = glm::mat4(1.0f);
 
-            // 1. POSICIÓN: Moverlo al spawn (con el offset que calculamos)
+            // 1.  Moverlo al spawn (con el offset que calculamos)
             model = glm::translate(model, xenoStaticPos);
 
-            // 2. CORRECCIÓN DE ROTACIÓN (PARA LEVANTARLO)
+            // 2. Correccion de rotacion (PARA LEVANTARLO)
             // Agregamos esta rotación de -90 grados en el eje X (1,0,0) 
-            // Esto hará que el modelo se "pare" si estaba acostado boca abajo/arriba.
+            // que hará que el modelo se pare si estaba acostado boca abajo/arriba.
             model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
-            // 3.ESCALA 
+            // 3.Escala
             float escala = 0.014f;
             model = glm::scale(model, glm::vec3(escala));
 
@@ -1852,7 +1854,8 @@ int main() {
 
             xenoRavenModel.Draw(xenomorphShader);
 
-            // ================= DIBUJAR HUEVOS (OPTIMIZADO) =================
+            // =====================================================================
+            // DIBUJAR HUEVOS 
             // Reutilizamos el shader y configuración actual (sin animación)
             // No cambiamos el shader, solo actualizamos el 'model' matrix
 
@@ -1860,7 +1863,7 @@ int main() {
                 glm::mat4 modelEgg = glm::mat4(1.0f);
                 modelEgg = glm::translate(modelEgg, pos);
 
-                // 1. CORRECCIÓN PARA LEVANTARLOS (NUEVO)
+                // 1. CORRECCIÓN PARA LEVANTARLOS
                 // Rotamos -90 grados en el eje X (1,0,0)
                 modelEgg = glm::rotate(modelEgg, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
@@ -1898,7 +1901,8 @@ int main() {
         glDrawArrays(GL_TRIANGLES,0,36);
         */
 
-        // ================= RECOLECCIÓN DE CUBOS COLECCIONABLES =================
+		// ======================================================================
+        // ================= RECOLECCIÓN DE CUBOS COLECCIONABLES ================
         CheckCollectibles(camera.Position, window);
 
         // ===== DIBUJAR ANTORCHAS CON EFECTO DE BRILLO MEJORADO =====

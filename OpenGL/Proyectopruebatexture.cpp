@@ -241,7 +241,7 @@ static bool LoadMapFromTxt(const std::string& path) {
     MAP.clear();
     std::string line;
     while (std::getline(in, line)) {
-        if (!line.empty() && (line.back() == '\r')) line.pop_back(); // por si el txt tiene CRLF
+        if (!line.empty() && (line.back() == '\r')) line.pop_back(); 
         if (line.empty()) continue;
         MAP.push_back(line);
     }
@@ -305,8 +305,8 @@ static glm::vec3 CellToWorld(int r, int c) {
     float halfW = (MAP_W * TILE) * 0.5f;
     float halfH = (MAP_H * TILE) * 0.5f;
 
-    float x = (c * TILE) - halfW + TILE * 0.5f;   // +0.5 tile => centro
-    float z = (halfH)-(r * TILE) - TILE * 0.5f; // -0.5 tile => centro
+    float x = (c * TILE) - halfW + TILE * 0.5f;   
+    float z = (halfH)-(r * TILE) - TILE * 0.5f; 
     return glm::vec3(x, 0.0f, z);
 }
 
@@ -316,14 +316,12 @@ static inline bool WalkableCell(int r, int c) {
     return InBounds(r, c) && IsFloor(r, c); // SOLO suelo es caminable
 }
 
-// Convierte mundo (x,z) a celda (r,c) usando TU MISMO CellToWorld (sin invertir)
-
 
 // Revisa colisión con 4 puntos del radio (circle approx)
 // ==== COLISIONES (PLAYER CIRCLE vs WALL TILES) ====
 // sube/baja (con TILE=0.50, 0.12–0.18)
 const float PLAYER_RADIUS = 0.22f;
-// margen para NO pegarse (evita que la cámara "asome")
+// margen para NO pegarse 
 const float PLAYER_SKIN = 0.03f;
 
 static inline void TileAABB(int r, int c, float& xMin, float& xMax, float& zMin, float& zMax) {
@@ -431,19 +429,18 @@ static Point WorldToCell(glm::vec3 pos) {
 }
 
 // =====================================================================
-// SISTEMA DE IA OPTIMIZADO PARA PERSECUCIÓN DEL ALIEN
+// SISTEMA PERSECUCIÓN DEL ALIEN
 // =====================================================================
 // Características:
 // 1. BFS con caché inteligente (solo recalcula cuando es necesario)
 // 2. Persecución directa cuando está cerca
-// 3. Sin allocaciones en el game loop (buffers pre-allocados)
 // =====================================================================
 
 #include <unordered_set>
 #include <cmath>
 
 // ===== CONSTANTES DE PATHFINDING OPTIMIZADAS =====
-const int PATHFIND_MAX_NODES = 1500;       // Suficiente para mapas grandes
+const int PATHFIND_MAX_NODES = 1500;       // Para mapas grandes
 const float PATH_RECALC_INTERVAL = 0.5f;   // Recalcular cada 0.5s máximo
 const int DIRECT_CHASE_DISTANCE = 5;       // Persecución directa si está cerca
 const int PLAYER_MOVE_THRESHOLD = 3;       // Recalcular si jugador se movió N celdas
@@ -469,7 +466,7 @@ static void InitPathfindBuffers() {
     pathfindBuffersInit = true;
 }
 
-// ===== RESET RÁPIDO DE BUFFERS (solo la región usada) =====
+// ===== RESET RÁPIDO DE BUFFERS ====
 static void ResetBFSBuffers(int centerR, int centerC, int radius) {
     int minR = std::max(0, centerR - radius);
     int maxR = std::min(MAP_H - 1, centerR + radius);
@@ -522,7 +519,7 @@ static void InitAStarBuffers() {
 }
 
 // =====================================================================
-// PRE-CÁLCULO DE TEXTURAS DE PAREDES (ejecutar una vez al inicio)
+// PRE-CÁLCULO DE TEXTURAS DE PAREDES (ejecutado una vez al inicio)
 // =====================================================================
 // Esto elimina los bucles while y búsquedas repetidas en cada frame
 
@@ -1073,7 +1070,7 @@ void ResetGame() {
     gameOver = false;
     gameWin = false;
 
-    // Reset tiempo (evita deltaTime gigante)
+    // Reset tiempo 
     lastFrame = (float)glfwGetTime();
 
     // ===== RESET CAMARA / JUGADOR =====
@@ -1082,14 +1079,14 @@ void ResetGame() {
         glm::vec3 spawnW = CellToWorld(sr, sc);
 
         // --- MODIFICACIÓN PARA EFECTO DESPERTAR ---
-        // 1. Iniciamos en el suelo (y = 0.2f) en lugar de parado (y = 2.0f)
+        // 1. Iniciamos en el suelo (y = 0.2f)
         camera.Position = glm::vec3(spawnW.x, 0.2f, spawnW.z);
 
         // 2. Mirando hacia el suelo 
         camera.Pitch = -45.0f;
         camera.Yaw = 180.0f; 
 
-        // 3. Activamos la animación
+        // 3. Activar animacion
         isWakingUp = true;
         wakeUpTimer = 0.0f;
 
@@ -1121,7 +1118,7 @@ static void SetupXenoStatic() {
         // ---------------------------------------------------------
         eggPositions.clear();
 
-        int numHuevos = 10;      // Cuantos huevos quieres
+		int numHuevos = 10;      // Numero de huevos a colocar
         float radio = 2.0f;     // Distancia desde el Xeno hasta los huevos
 
         for (int i = 0; i < numHuevos; i++) {

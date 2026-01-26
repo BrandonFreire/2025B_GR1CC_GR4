@@ -86,8 +86,9 @@ const int TOTAL_COLLECTIBLES = 5;
 // prototipos colisión (para que processInput los vea)
 static inline void MoveWithCollision(const glm::vec3& deltaXZ);
 
-const unsigned int SCR_WIDTH = 1920;
-const unsigned int SCR_HEIGHT = 1080;
+// Variables de resolución (se inicializarán con la del monitor)
+unsigned int SCR_WIDTH = 1920;
+unsigned int SCR_HEIGHT = 1080;
 
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
@@ -1219,7 +1220,16 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LABERINTO (TXT) - Sin Texturas", nullptr, nullptr);
+    // Obtener el monitor principal para pantalla completa
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+    
+    // Actualizar resolución con la del monitor
+    SCR_WIDTH = mode->width;
+    SCR_HEIGHT = mode->height;
+    
+    // Crear ventana en pantalla completa
+    GLFWwindow* window = glfwCreateWindow(mode->width, mode->height, "LABERINTO (TXT) - Sin Texturas", monitor, nullptr);
     glfwMakeContextCurrent(window);
 
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);

@@ -2,7 +2,7 @@
 // Lee un archivo maze.txt (0 = vacío, 1 = suelo, E = salida)
 // Requiere B2T3.fs con uniform vec3 baseColor (sin samplear texture1).
 
-// ===================== FORZAR GPU DEDICADA =====================
+// ===================== Forzar uso de GPU=====================
 #ifdef _WIN32
 extern "C" {
     __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
@@ -69,6 +69,7 @@ Enemy enemy1;
 glm::vec3 xenoStaticPos(0.0f); // Posición del modelo
 bool xenoStaticActive = false; // Si se colocó correctamente
 std::vector<glm::vec3> eggPositions;
+glm::vec3 spaceshipPos(0.0f); // Posición de la nave espacial
 
 // ================= CUBOS COLECCIONABLES =================
 struct Collectible {
@@ -1226,17 +1227,24 @@ static void SetupXenoStatic() {
     int r, c;
     if (FindSpawn(r, c)) {
         // ---------------------------------------------------------
-        // 1. POSICIONAR AL XENO 
+        // POSICIONAR AL XENO 
         // ---------------------------------------------------------
         xenoStaticPos = CellToWorld(r, c);
         xenoStaticPos.z += 1.0f; 
         xenoStaticPos.x += 3.0f; 
         xenoStaticPos.y = 0.0f;
-
         xenoStaticActive = true;
 
         // ---------------------------------------------------------
-        // 2. POSICIONAR LOS HUEVOS EN CÍRCULO ALREDEDOR DEL XENO
+        // NAVE SPACESHIP
+        // ---------------------------------------------------------
+        spaceshipPos = xenoStaticPos;
+        spaceshipPos.x -= 12.0f; // 6 unidades a la izquierda del Xeno
+        spaceshipPos.z -= 4.0f; // Un poco más atrás
+        spaceshipPos.y = 0.85f;  // En el suelo
+
+        // ---------------------------------------------------------
+        // POSICIONAR LOS HUEVOS EN CÍRCULO ALREDEDOR DEL XENO
         // ---------------------------------------------------------
         eggPositions.clear();
 
@@ -1268,7 +1276,7 @@ static void SetupXenoStatic() {
             }
         }
 
-        std::cout << "Xeno Raven centrado y rodeado por " << eggPositions.size() << " huevos.\n";
+        std::cout << "Xeno Raven centrado, nave colocada y xeno rodeado por " << eggPositions.size() << " huevos.\n";
     }
 }
 
@@ -1632,6 +1640,9 @@ int main() {
 
     // CARGAR MODELO DEL HUEVO
     Model alienEggModel("model/alien_egg/alien_egg.gltf");
+
+    // CARGAR MODELO DE LA NAVE
+    Model spaceshipModel("model/spaceship/spaceship.gltf");
 
     // CONFIGURAR SU POSICIÓN
     SetupXenoStatic();
@@ -2075,6 +2086,26 @@ int main() {
             // Reactivar animación para los siguientes enemigos
             xenomorphShader.setBool("useAnimation", true);
         }
+
+		// ======================================================================
+		// DIBUJAR NAVE ESPACIAL
+        glm::mat4 modelShip = glm::mat4(1.0f);
+        modelShip = glm::translate(modelShip, spaceshipPos);
+
+        // 1. CORRECCIÓN DE ROTACIÓN (Igual que el Xeno y Huevos)
+        // -90 en X para levantarla
+        modelShip = glm::rotate(modelShip, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
+        // Rotación
+        // Gira 30 grados sobre su eje vertical para que no esté tan recta
+        modelShip = glm::rotate(modelShip, glm::radians(30.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
+        // 2. ESCALA
+        float escalaNave = 0.0065f;
+        modelShip = glm::scale(modelShip, glm::vec3(escalaNave));
+
+        xenomorphShader.setMat4("model", modelShip);
+        spaceshipModel.Draw(xenomorphShader);
 
         // ===== CUBO LUZ =====
         // The light cube visualization was removed per request so it is not rendered in the sky.

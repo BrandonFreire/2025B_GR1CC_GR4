@@ -134,6 +134,8 @@
   <ItemGroup>
     <None Include="model\alien_egg\alien_egg.bin" />
     <None Include="model\alien_egg\alien_egg.gltf" />
+    <None Include="model\spaceship\spaceship.bin" />
+    <None Include="model\spaceship\spaceship.gltf" />
     <None Include="model\xenomorph\xenomorph.bin" />
     <None Include="model\xenomorph\xenomorph.gltf" />
     <None Include="model\xeno_raven\xeno_raven.bin" />
@@ -153,6 +155,27 @@
     <Image Include="model\alien_egg\Material_baseColor.png" />
     <Image Include="model\alien_egg\Material_metallicRoughness.png" />
     <Image Include="model\alien_egg\Material_normal.png" />
+    <Image Include="model\spaceship\default_baseColor.png" />
+    <Image Include="model\spaceship\default_metallicRoughness.png" />
+    <Image Include="model\spaceship\default_normal.png" />
+    <Image Include="model\spaceship\FLOORS_baseColor.png" />
+    <Image Include="model\spaceship\FLOORS_emissive.png" />
+    <Image Include="model\spaceship\FLOORS_metallicRoughness.png" />
+    <Image Include="model\spaceship\FLOORS_normal.png" />
+    <Image Include="model\spaceship\SHELL_baseColor.png" />
+    <Image Include="model\spaceship\SHELL_metallicRoughness.png" />
+    <Image Include="model\spaceship\SHELL_normal.png" />
+    <Image Include="model\spaceship\TERMINAL_baseColor.png" />
+    <Image Include="model\spaceship\TERMINAL_emissive.png" />
+    <Image Include="model\spaceship\TERMINAL_metallicRoughness.png" />
+    <Image Include="model\spaceship\TERMINAL_normal.png" />
+    <Image Include="model\spaceship\WALLEND_baseColor.png" />
+    <Image Include="model\spaceship\WALLEND_emissive.png" />
+    <Image Include="model\spaceship\WALLEND_metallicRoughness.png" />
+    <Image Include="model\spaceship\WALLEND_normal.png" />
+    <Image Include="model\spaceship\WALLS_baseColor.png" />
+    <Image Include="model\spaceship\WALLS_metallicRoughness.png" />
+    <Image Include="model\spaceship\WALLS_normal.png" />
     <Image Include="model\xenomorph\MI_K33Arms007_baseColor.png" />
     <Image Include="model\xenomorph\MI_K33Arms007_normal.jpeg" />
     <Image Include="model\xenomorph\MI_K33Arms007_normal.jpg" />

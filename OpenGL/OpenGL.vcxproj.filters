@@ -31,6 +31,9 @@
     <Filter Include="Archivos de origen\model\alien_egg">
       <UniqueIdentifier>{af4132e2-8674-46c2-891b-00855c69722a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Archivos de origen\model\spaceship">
+      <UniqueIdentifier>{acbfd1bd-6280-4406-819d-1817f5f36e51}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Proyectopruebatexture.cpp">
@@ -88,6 +91,12 @@
     </None>
     <None Include="model\alien_egg\alien_egg.gltf">
       <Filter>Archivos de origen\model\alien_egg</Filter>
+    </None>
+    <None Include="model\spaceship\spaceship.bin">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </None>
+    <None Include="model\spaceship\spaceship.gltf">
+      <Filter>Archivos de origen\model\spaceship</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -279,6 +288,69 @@
     </Image>
     <Image Include="model\alien_egg\Material_metallicRoughness.png">
       <Filter>Archivos de origen\model\alien_egg</Filter>
+    </Image>
+    <Image Include="model\spaceship\default_baseColor.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\default_metallicRoughness.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\default_normal.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\FLOORS_baseColor.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\FLOORS_emissive.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\FLOORS_metallicRoughness.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\FLOORS_normal.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\SHELL_baseColor.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\SHELL_metallicRoughness.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\SHELL_normal.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\TERMINAL_baseColor.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\TERMINAL_emissive.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\TERMINAL_metallicRoughness.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\TERMINAL_normal.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\WALLEND_baseColor.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\WALLEND_emissive.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\WALLEND_metallicRoughness.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\WALLEND_normal.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\WALLS_baseColor.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\WALLS_metallicRoughness.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
+    </Image>
+    <Image Include="model\spaceship\WALLS_normal.png">
+      <Filter>Archivos de origen\model\spaceship</Filter>
     </Image>
   </ItemGroup>
   <ItemGroup>

@@ -107,7 +107,7 @@ const float LIGHT_CUBE_SCALE = 0.50f;
 
 // ================= LUZ =================
 glm::vec3 lightPos(0.0f, 6.0f, 0.0f);
-bool linternaEncendida = false;
+bool linternaEncendida = true;
 
 // ================= MINIMAPA =================
 const int MINIMAP_RADIUS = 8;
@@ -369,6 +369,33 @@ static inline bool CollidesAt(float x, float z) {
             }
         }
     }
+    
+    // ===== COLISIÓN CON EL ENEMIGO =====
+    const float ENEMY_COLLISION_RADIUS = 0.5f; // Radio del enemigo
+    float distToEnemy = glm::distance(glm::vec2(x, z), glm::vec2(enemy1.pos.x, enemy1.pos.z));
+    if (distToEnemy < (rad + ENEMY_COLLISION_RADIUS)) {
+        return true;
+    }
+    
+    // ===== COLISIÓN CON EL XENO RAVEN ESTÁTICO (ZONA COMPLETA) =====
+    if (xenoStaticActive) {
+        // Radio grande que cubre toda la zona del círculo de huevos + el xeno en el centro
+        const float XENO_STATIC_ZONE_RADIUS = 2.8f; // Más grande que el radio de los huevos (2.0f)
+        float distToXenoStatic = glm::distance(glm::vec2(x, z), glm::vec2(xenoStaticPos.x, xenoStaticPos.z));
+        if (distToXenoStatic < (rad + XENO_STATIC_ZONE_RADIUS)) {
+            return true;
+        }
+    }
+    
+    // ===== COLISIÓN CON LOS HUEVOS (ADICIONAL POR SI ACASO) =====
+    const float EGG_COLLISION_RADIUS = 0.3f; // Radio de los huevos
+    for (const auto& eggPos : eggPositions) {
+        float distToEgg = glm::distance(glm::vec2(x, z), glm::vec2(eggPos.x, eggPos.z));
+        if (distToEgg < (rad + EGG_COLLISION_RADIUS)) {
+            return true;
+        }
+    }
+    
     return false;
 }
 
@@ -687,20 +714,21 @@ static void PrecomputeWallTextures() {
 // Agrupa toda la geometría por textura para reducir draw calls masivamente
 
 // Array global de texturas (se llenará en main)
-static unsigned int g_allTextures[9]; // 0-5: hall, 6: room, 7-8: indie, + floor/ceiling
+static unsigned int g_allTextures[12]; // 0-5: hall, 6: room, 7-8: indie, 9: floor, 10-11: techo A/B
 
 static void BuildMazeGeometry() {
-    if (mazeBatchesInit) return;
+if (mazeBatchesInit) return;
 
-    // Limpiar batches anteriores
-    for (auto& batch : mazeBatches) {
-        if (batch.VAO) glDeleteVertexArrays(1, &batch.VAO);
-        if (batch.VBO) glDeleteBuffers(1, &batch.VBO);
-    }
-    mazeBatches.clear();
+// Limpiar batches anteriores
+for (auto& batch : mazeBatches) {
+    if (batch.VAO) glDeleteVertexArrays(1, &batch.VAO);
+    if (batch.VBO) glDeleteBuffers(1, &batch.VBO);
+}
+mazeBatches.clear();
 
-    // Recopilar vértices por textura (índices 0-8 para paredes, 9 para suelo, 10 para techo)
-    std::vector<std::vector<float>> verticesByTexture(11);
+// Recopilar vértices por textura:
+// 0-8: paredes, 9: suelo, 10: techo A (patrón), 11: techo B (patrón)
+std::vector<std::vector<float>> verticesByTexture(12);
 
     // Función lambda para agregar un quad de suelo/techo
     // Genera un quad horizontal en la posición (x, z) a altura y
@@ -767,8 +795,11 @@ static void BuildMazeGeometry() {
             // Suelo (textura índice 9)
             addFloorQuad(verticesByTexture[9], w.x, w.z, 0.0f, 0.0f, 1.0f, 0.0f);
 
-            // Techo (textura índice 10 - sin textura, color sólido)
-            addFloorQuad(verticesByTexture[10], w.x, w.z, WALL_HEIGHT, 0.0f, -1.0f, 0.0f);
+            // Techo con patrón de tablero (cada 3x3, A está rodeado de B)
+            // isRoofA = true cuando r%3==0 && c%3==0
+            bool isRoofA = (r % 3 == 0) && (c % 3 == 0);
+            int roofTexIdx = isRoofA ? 10 : 11; // 10 = textura A, 11 = textura B
+            addFloorQuad(verticesByTexture[roofTexIdx], w.x, w.z, WALL_HEIGHT, 0.0f, -1.0f, 0.0f);
 
             // Paredes Norte (dir 0) - mirando hacia -Z (dentro de la celda)
             if (!InBounds(r - 1, c) || IsWall(r - 1, c)) {
@@ -813,12 +844,12 @@ static void BuildMazeGeometry() {
     }
 
     // Crear VAO/VBO para cada grupo de texturas
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < 12; i++) {
         if (verticesByTexture[i].empty()) continue;
 
         MazeBatch batch;
         batch.vertexCount = (int)verticesByTexture[i].size() / 8; // 8 floats per vertex
-        batch.textureID = (i < 9) ? g_allTextures[i] : 0; // Para suelo/techo se manejará aparte
+        batch.textureID = g_allTextures[i]; // Ahora todas las texturas están en el array
 
         glGenVertexArrays(1, &batch.VAO);
         glGenBuffers(1, &batch.VBO);
@@ -911,9 +942,30 @@ static Point GetNextStepBFS(int startR, int startC, int targetR, int targetC) {
 
             // Validar límites y que sea suelo
             if (InBounds(nr, nc) && !visited[nr][nc] && IsFloor(nr, nc)) {
-                visited[nr][nc] = true;
-                parent[nr][nc] = curr;
-                q.push({ nr, nc });
+                // ===== VERIFICAR SI LA CELDA COLISIONA CON EL XENO RAVEN ESTÁTICO =====
+                glm::vec3 cellWorldPos = CellToWorld(nr, nc);
+                bool cellBlocked = false;
+                
+                if (xenoStaticActive) {
+                    // Mismo radio que usa la colisión del jugador
+                    const float XENO_STATIC_ZONE_RADIUS = 2.8f;
+                    float distToXenoStatic = glm::distance(
+                        glm::vec2(cellWorldPos.x, cellWorldPos.z), 
+                        glm::vec2(xenoStaticPos.x, xenoStaticPos.z)
+                    );
+                    
+                    // Si el centro de la celda está dentro de la zona prohibida, no la consideramos
+                    if (distToXenoStatic < XENO_STATIC_ZONE_RADIUS) {
+                        cellBlocked = true;
+                    }
+                }
+                
+                // Solo agregar la celda si NO está bloqueada
+                if (!cellBlocked) {
+                    visited[nr][nc] = true;
+                    parent[nr][nc] = curr;
+                    q.push({ nr, nc });
+                }
             }
         }
     }
@@ -1245,7 +1297,7 @@ int main() {
     unsigned int wallindie2 = loadTexture("textures/Finalpainsano2.png");
 
     // ===== TEXTURAS =====
-    unsigned int floorRoomTex = loadTexture("textures/TextruaP1.png");
+    unsigned int floorRoomTex = loadTexture("textures/TextruaP3.png");
     // restore: room walls use Pared4, hall walls use multiple pasillo textures
     // load wallRoomTex without vertical flip so it displays upright
     unsigned int wallRoomTex = loadTexture("textures/Pared4.png", false);
@@ -1259,6 +1311,10 @@ int main() {
     wallHallTex[3] = loadTexture("textures/polipa4.png");
     wallHallTex[4] = loadTexture("textures/polipa5.png");
     wallHallTex[5] = loadTexture("textures/polipa6.png");
+
+    // ===== TEXTURAS DE TECHO (patrón de tablero) =====
+    unsigned int floorHallTexA = loadTexture("textures/pasilloprueba.png");
+    unsigned int floorHallTexB = loadTexture("textures/pasilloprueba1.png");
 
     // detecta algunos segmentos de pared estrechos y márcalos para usar la textura indie
     // IndieSeg ya está definido globalmente
@@ -1309,6 +1365,9 @@ int main() {
     g_allTextures[6] = wallRoomTex;
     g_allTextures[7] = wallindie1;
     g_allTextures[8] = wallindie2;
+    g_allTextures[9] = floorRoomTex;      // Suelo
+    g_allTextures[10] = floorHallTexA;    // Techo patrón A
+    g_allTextures[11] = floorHallTexB;    // Techo patrón B
 
     // ===== PRE-CALCULAR TEXTURAS Y GEOMETRÍA DEL LABERINTO =====
     PrecomputeWallTextures();
@@ -1701,13 +1760,18 @@ int main() {
                     shader.setVec2("texScale2", glm::vec2(0.5f, 0.5f));
                     shader.setBool("flipTexY", false);
                     glActiveTexture(GL_TEXTURE0);
-                    glBindTexture(GL_TEXTURE_2D, floorRoomTex);
+                    glBindTexture(GL_TEXTURE_2D, batch.textureID);
                     shader.setVec3("baseColor", glm::vec3(1.0f));
                 }
                 else {
-                    // Techo (sin textura)
-                    shader.setBool("useTexture", false);
-                    shader.setVec3("baseColor", glm::vec3(0.25f, 0.25f, 0.25f));
+                    // Techo con textura (batches 10 y 11)
+                    shader.setBool("useTexture", true);
+                    shader.setBool("useWorldUV", false);
+                    shader.setVec2("texScale2", glm::vec2(1.0f, 1.0f));
+                    shader.setBool("flipTexY", false);
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, batch.textureID);
+                    shader.setVec3("baseColor", glm::vec3(1.0f));
                 }
 
                 glDrawArrays(GL_TRIANGLES, 0, batch.vertexCount);

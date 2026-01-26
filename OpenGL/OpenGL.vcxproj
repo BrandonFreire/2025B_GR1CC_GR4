@@ -168,9 +168,12 @@
     <Image Include="textures\Finalpa2.png" />
     <Image Include="textures\Finalpainsano1.png" />
     <Image Include="textures\Finalpainsano2.png" />
+    <Image Include="textures\Francisbot.png" />
     <Image Include="textures\gameover.png" />
     <Image Include="textures\gradas1.png" />
     <Image Include="textures\gradas2.png" />
+    <Image Include="textures\gradas3.png" />
+    <Image Include="textures\Harrybot.png" />
     <Image Include="textures\Pared1.png" />
     <Image Include="textures\Pared2.png" />
     <Image Include="textures\Pared3.png" />
@@ -178,6 +181,12 @@
     <Image Include="textures\PAREDPASILLO3.png" />
     <Image Include="textures\PAREDPASILLO4.png" />
     <Image Include="textures\PAREDPASILLO5.png" />
+    <Image Include="textures\pasillo1.png" />
+    <Image Include="textures\pasillo2.png" />
+    <Image Include="textures\pasillo3.png" />
+    <Image Include="textures\pasillo4.png" />
+    <Image Include="textures\pasillo5.png" />
+    <Image Include="textures\pasillo6.png" />
     <Image Include="textures\polipa.png" />
     <Image Include="textures\polipa2.png" />
     <Image Include="textures\polipa3.png" />
@@ -186,8 +195,10 @@
     <Image Include="textures\polipa6.png" />
     <Image Include="textures\portada.png" />
     <Image Include="textures\pruebapared.png" />
+    <Image Include="textures\Techotex.png" />
     <Image Include="textures\TextruaP1.png" />
     <Image Include="textures\TextruaP2.png" />
+    <Image Include="textures\Tinibot.png" />
     <Image Include="textures\win.png" />
   </ItemGroup>
   <ItemGroup>

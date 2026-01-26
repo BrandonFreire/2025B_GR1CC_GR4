@@ -95,10 +95,14 @@ const float CELL_EPS = 1e-4f;   // epsilon contra errores de float
 bool gameWin = false;
 unsigned int gameWinTex = 0;
 
-// ================= ESCALA =================
-// Se calcula MAP_W/MAP_H desde el TXT. TILE mantiene tamaño similar a tu ROOM_SIZE (~30).
-const float TILE = 0.75f;             // 155 * 0.20 ≈ 31 (si tu mapa es 155 de ancho)
-const float WALL_HEIGHT = 4.0f;       // paredes más bajas
+// ================= VARIABLES ANIMACIÓN DESPERTAR =================
+bool isWakingUp = true;          // ¿Está en proceso de levantarse?
+float wakeUpTimer = 0.0f;        // Cronómetro
+const float WAKE_DURATION = 4.0f; // Tiempo para levantarse 
+
+// ================= ESCALA del mapa =================
+const float TILE = 0.75f;            
+const float WALL_HEIGHT = 4.0f;       
 const float LIGHT_CUBE_SCALE = 0.50f;
 
 // ================= LUZ =================
@@ -151,8 +155,11 @@ void mouse_callback(GLFWwindow*, double xpos, double ypos) {
 void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
+    
+    // Si se está levantando, no dejamos que se mueva
+    if (isWakingUp) return;
 
-    // Toggle modo aéreo con SPACE (subir)
+    // Modo aereo
     static bool spacePrevState = false;
     bool spaceState = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
     if (spaceState && !spacePrevState && !modoAereo) {
@@ -164,7 +171,7 @@ void processInput(GLFWwindow* window) {
     }
     spacePrevState = spaceState;
 
-    // Bajar con LEFT SHIFT
+    // Bajar con SHIFT
     static bool shiftPrevState = false;
     bool shiftState = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
     if (shiftState && !shiftPrevState && modoAereo) {
@@ -181,7 +188,7 @@ void processInput(GLFWwindow* window) {
     camera.MovementSpeed = 6.0f;
 
     if (modoAereo) {
-        // Movimiento libre en modo aéreo (sin colisiones)
+        // Movimiento libre en modo aéreo 
         float v = camera.MovementSpeed * 3.0f * deltaTime; // Más rápido en el aire
 
         // Movimiento horizontal basado en la orientación
@@ -1073,10 +1080,20 @@ void ResetGame() {
     int sr = 0, sc = 0;
     if (FindSpawn(sr, sc)) {
         glm::vec3 spawnW = CellToWorld(sr, sc);
-        camera.Position = glm::vec3(spawnW.x, 2.0f, spawnW.z);
-        camera.Yaw = 180.0f;
-        camera.Pitch = 0.0f;
-        camera.ProcessMouseMovement(0, 0);
+
+        // --- MODIFICACIÓN PARA EFECTO DESPERTAR ---
+        // 1. Iniciamos en el suelo (y = 0.2f) en lugar de parado (y = 2.0f)
+        camera.Position = glm::vec3(spawnW.x, 0.2f, spawnW.z);
+
+        // 2. Mirando hacia el suelo 
+        camera.Pitch = -45.0f;
+        camera.Yaw = 180.0f; 
+
+        // 3. Activamos la animación
+        isWakingUp = true;
+        wakeUpTimer = 0.0f;
+
+        camera.ProcessMouseMovement(0, 0); // Aplicar cambios
     }
 
     // ===== RESET ENEMIGOS =====
@@ -1547,12 +1564,42 @@ int main() {
             continue;
         }
 
-
-
-
         float time = (float)glfwGetTime();
         deltaTime = time - lastFrame;
         lastFrame = time;
+
+        // ================= ANIMACIÓN DE LEVANTARSE =================
+        if (isWakingUp) {
+            wakeUpTimer += deltaTime;
+
+            // Calculamos el porcentaje de progreso (0.0 a 1.0)
+            float t = wakeUpTimer / WAKE_DURATION;
+
+            if (t >= 1.0f) {
+                // Terminó la animación
+                isWakingUp = false;
+                camera.Position.y = 2.0f; // Altura final firme
+                camera.Pitch = 0.0f;      // Mirada al frente firme
+            }
+            else {
+                // Esto hace que arranque lento, acelere y frene al final
+                float smoothT = t * t * (3.0f - 2.0f * t);
+
+                // 1. Interpolamos Altura: De 0.2 (suelo) a 2.0 (parado)
+                float startHeight = 0.2f;
+                float endHeight = 2.0f;
+                camera.Position.y = startHeight + (endHeight - startHeight) * smoothT;
+
+                // 2. Interpolamos Mirada (Pitch): De -45 (suelo) a 0 (horizonte)
+                float startPitch = -45.0f;
+                float endPitch = 0.0f;
+                camera.Pitch = startPitch + (endPitch - startPitch) * smoothT;
+
+                // Actualizar vectores de la cámara
+                camera.ProcessMouseMovement(0, 0);
+            }
+        }
+        // ===========================================================
 
         processInput(window);
 

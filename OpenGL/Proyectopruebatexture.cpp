@@ -3,8 +3,6 @@
 // Requiere B2T3.fs con uniform vec3 baseColor (sin samplear texture1).
 
 // ===================== FORZAR GPU DEDICADA =====================
-// Estas exportaciones indican a los drivers de NVIDIA y AMD que
-// utilicen la tarjeta gráfica dedicada en lugar de la integrada.
 #ifdef _WIN32
 extern "C" {
     __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
@@ -65,7 +63,12 @@ struct Enemy {
 };
 
 // Variables globales para los enemigos
-Enemy enemy1;//, enemy2;
+Enemy enemy1;
+
+// ================= VARIABLES XENO RAVEN (ESTÁTICO) =================
+glm::vec3 xenoStaticPos(0.0f); // Posición del modelo
+bool xenoStaticActive = false; // Si se colocó correctamente
+std::vector<glm::vec3> eggPositions;
 
 // ================= CUBOS COLECCIONABLES =================
 struct Collectible {
@@ -925,43 +928,27 @@ static Point GetNextStepBFS(int startR, int startC, int targetR, int targetC) {
 }
 
 static void SpawnEnemies(glm::vec3 playerPos) {
-    Point pCell = WorldToCell(playerPos);
-    int spawnedCount = 0;
+	// Coordanas para spawn fijo en cuarto lejano
+    int fixedR = 23;
+    int fixedC = 13;
 
-    // Distancias en celdas (Grid)
-    int minDist = 5;  // No aparecer pegado al jugador
-    int maxDist = 15; // No aparecer al otro lado del mapa
+    // Asignar directamente al enemigo
+    enemy1.r = fixedR;
+    enemy1.c = fixedC;
+    enemy1.pos = CellToWorld(fixedR, fixedC);
 
-    // Intentos aleatorios para encontrar posición válida
-    for (int i = 0; i < 1000; i++) {
-        int r = rand() % MAP_H;
-        int c = rand() % MAP_W;
+    // Asegurar que esté en el suelo (ajuste de altura si es necesario)
+    enemy1.pos.y = 0.0f;
 
-        if (IsFloor(r, c)) {
-            float dPlayer = glm::distance(glm::vec2(r, c), glm::vec2(pCell.r, pCell.c));
+    // Reiniciar variables de IA para que empiece limpio
+    enemy1.pathRecalcTimer = 0.0f;
+    enemy1.isMoving = false;
+    enemy1.cachedPath.clear();
 
-            if (dPlayer > minDist && dPlayer < maxDist) {
-                // Configurar enemigo 1
-                if (spawnedCount == 0) {
-                    enemy1.r = r; enemy1.c = c;
-                    enemy1.pos = CellToWorld(r, c);
-                    spawnedCount++;
-                }
-                // Configurar enemigo 2 (verificar que no esté cerca del 1)
-                /*else if (spawnedCount == 1) {
-                    float dEnemy1 = glm::distance(glm::vec2(r, c), glm::vec2(enemy1.r, enemy1.c));
-                    if (dEnemy1 > 5) { // Separados al menos 5 casillas
-                        enemy2.r = r; enemy2.c = c;
-                        enemy2.pos = CellToWorld(r, c);
-                        spawnedCount++;
-                        break;
-                    }
-                }*/
-            }
-        }
-    }
-    std::cout << "Enemigos spawneados: " << spawnedCount << "\n";
+    std::cout << "Enemigo spawneado FIJO en cuarto lejano: " << fixedR << ", " << fixedC << "\n";
+
 }
+
 
 static void SpawnCollectibles(const glm::vec3& playerPos) {
     collectibles.clear();
@@ -1098,6 +1085,57 @@ void ResetGame() {
     // ===== RESET COLECCIONABLES =====
     SpawnCollectibles(camera.Position);
 }
+
+static void SetupXenoStatic() {
+    int r, c;
+    if (FindSpawn(r, c)) {
+        // ---------------------------------------------------------
+        // 1. POSICIONAR AL XENO 
+        // ---------------------------------------------------------
+        xenoStaticPos = CellToWorld(r, c);
+        xenoStaticPos.z += 1.5f; 
+        xenoStaticPos.x += 2.5f; 
+        xenoStaticPos.y = 0.0f;
+
+        xenoStaticActive = true;
+
+        // ---------------------------------------------------------
+        // 2. POSICIONAR LOS HUEVOS EN CÍRCULO ALREDEDOR DEL XENO
+        // ---------------------------------------------------------
+        eggPositions.clear();
+
+        int numHuevos = 10;      // Cuantos huevos quieres
+        float radio = 2.0f;     // Distancia desde el Xeno hasta los huevos
+
+        for (int i = 0; i < numHuevos; i++) {
+            // Calcular ángulo para distribuir equitativamente
+            float angulo = (360.0f / numHuevos) * i;
+            float rad = glm::radians(angulo);
+
+            // Calcular posición RELATIVA al Xeno
+            glm::vec3 posHuevo = xenoStaticPos;
+            posHuevo.x += cos(rad) * radio; // Mover en X
+            posHuevo.z += sin(rad) * radio; // Mover en Z
+
+            // Variar para no tener un circulo perfecto
+            float randomVar = ((rand() % 100) / 100.0f) * 0.5f;
+            posHuevo.x += randomVar;
+            posHuevo.z += randomVar;
+
+            // Asegurar altura
+            posHuevo.y = 0.0f;
+
+            // Verificar si cayó en suelo válido para no atravesar paredes
+            Point p = WorldToCell(posHuevo);
+            if (IsFloor(p.r, p.c)) {
+                eggPositions.push_back(posHuevo);
+            }
+        }
+
+        std::cout << "Xeno Raven centrado y rodeado por " << eggPositions.size() << " huevos.\n";
+    }
+}
+
 
 // ================= MAIN =================
 
@@ -1392,6 +1430,18 @@ int main() {
 
     // CREAR EL ANIMATOR
     Animator animator(&xenomorphAnimation);
+
+    // ... después de cargar xenomorphModel y animator ...
+
+    // 1. CARGAR EL MODELO XENO RAVEN
+    // Asegúrate de que la ruta sea correcta
+    Model xenoRavenModel("model/xeno_raven/xeno_raven.gltf");
+
+    // CARGAR MODELO DEL HUEVO
+    Model alienEggModel("model/alien_egg/alien_egg.gltf");
+
+    // 2. CONFIGURAR SU POSICIÓN
+    SetupXenoStatic();
 
     // Spawnear coleccionables y crear un preview extra junto al jugador
     SpawnCollectibles(camera.Position);
@@ -1732,6 +1782,59 @@ int main() {
 
             xenomorphShader.setMat4("model", model);
             xenomorphModel.Draw(xenomorphShader);
+        }
+
+        // ================= DIBUJAR XENO RAVEN (ESTÁTICO) =================
+        // ================= DIBUJAR XENO RAVEN (ESTÁTICO) =================
+        if (xenoStaticActive) {
+            xenomorphShader.use();
+            xenomorphShader.setBool("useAnimation", false); // Sin animación
+
+            glm::mat4 model = glm::mat4(1.0f);
+
+            // 1. POSICIÓN: Moverlo al spawn (con el offset que calculamos)
+            model = glm::translate(model, xenoStaticPos);
+
+            // 2. CORRECCIÓN DE ROTACIÓN (PARA LEVANTARLO)
+            // Agregamos esta rotación de -90 grados en el eje X (1,0,0) 
+            // Esto hará que el modelo se "pare" si estaba acostado boca abajo/arriba.
+            model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
+            // 3.ESCALA 
+            float escala = 0.014f;
+            model = glm::scale(model, glm::vec3(escala));
+
+            xenomorphShader.setMat4("model", model);
+
+            xenoRavenModel.Draw(xenomorphShader);
+
+            // ================= DIBUJAR HUEVOS (OPTIMIZADO) =================
+            // Reutilizamos el shader y configuración actual (sin animación)
+            // No cambiamos el shader, solo actualizamos el 'model' matrix
+
+            for (const auto& pos : eggPositions) {
+                glm::mat4 modelEgg = glm::mat4(1.0f);
+                modelEgg = glm::translate(modelEgg, pos);
+
+                // 1. CORRECCIÓN PARA LEVANTARLOS (NUEVO)
+                // Rotamos -90 grados en el eje X (1,0,0)
+                modelEgg = glm::rotate(modelEgg, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
+                // 2. ESCALA
+                modelEgg = glm::scale(modelEgg, glm::vec3(0.5f));
+
+                // 3. ROTACIÓN ALEATORIA (AJUSTADA)
+                // Como ya rotamos el eje coordenadas, para que giren "de pie" 
+                // ahora debemos rotar sobre el eje Z local (0,0,1) en lugar de Y.
+                float rotAngle = pos.x * 10.0f;
+                modelEgg = glm::rotate(modelEgg, glm::radians(rotAngle), glm::vec3(0.0f, 0.0f, 1.0f));
+
+                xenomorphShader.setMat4("model", modelEgg);
+                alienEggModel.Draw(xenomorphShader);
+            }
+
+            // Reactivar animación para los siguientes enemigos
+            xenomorphShader.setBool("useAnimation", true);
         }
 
         // ===== CUBO LUZ =====

@@ -25,12 +25,18 @@
     <Filter Include="Archivos de origen\model\xenomorph">
       <UniqueIdentifier>{0772609d-dbb6-4b86-9d02-9b7244f56b41}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Archivos de origen\model\xeno_raven">
+      <UniqueIdentifier>{45db89c8-287c-46f0-939c-6b4327f11dae}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Archivos de origen\model\alien_egg">
+      <UniqueIdentifier>{af4132e2-8674-46c2-891b-00855c69722a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="D:\glad\src\glad.c">
+    <ClCompile Include="Proyectopruebatexture.cpp">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
-    <ClCompile Include="Proyectopruebatexture.cpp">
+    <ClCompile Include="..\OpenGL_Stuff\Library\glad.c">
       <Filter>Archivos de origen</Filter>
     </ClCompile>
   </ItemGroup>
@@ -70,6 +76,18 @@
     </None>
     <None Include="shaders\minimap.vs">
       <Filter>Archivos de origen\shaders</Filter>
+    </None>
+    <None Include="model\xeno_raven\xeno_raven.bin">
+      <Filter>Archivos de origen\model\xeno_raven</Filter>
+    </None>
+    <None Include="model\xeno_raven\xeno_raven.gltf">
+      <Filter>Archivos de origen\model\xeno_raven</Filter>
+    </None>
+    <None Include="model\alien_egg\alien_egg.bin">
+      <Filter>Archivos de origen\model\alien_egg</Filter>
+    </None>
+    <None Include="model\alien_egg\alien_egg.gltf">
+      <Filter>Archivos de origen\model\alien_egg</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -169,11 +187,106 @@
     <Image Include="model\xenomorph\MI_K33Tail007_normal.jpg">
       <Filter>Archivos de origen\model\xenomorph</Filter>
     </Image>
+    <Image Include="textures\Finalpainsano1.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\Finalpainsano2.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\Francisbot.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\gameover.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\gradas3.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\Harrybot.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\pasillo1.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\pasillo2.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\pasillo3.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\pasillo4.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\pasillo5.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\pasillo6.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\polipa.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\polipa2.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\polipa3.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\polipa4.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\polipa5.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\polipa6.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\portada.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\Techotex.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\Tinibot.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="textures\win.png">
+      <Filter>Archivos de recursos</Filter>
+    </Image>
+    <Image Include="model\xeno_raven\07_-_Default_baseColor.png">
+      <Filter>Archivos de origen\model\xeno_raven</Filter>
+    </Image>
+    <Image Include="model\xeno_raven\07_-_Default_metallicRoughness.png">
+      <Filter>Archivos de origen\model\xeno_raven</Filter>
+    </Image>
+    <Image Include="model\xeno_raven\07_-_Default_normal.png">
+      <Filter>Archivos de origen\model\xeno_raven</Filter>
+    </Image>
+    <Image Include="model\xeno_raven\default_baseColor.png">
+      <Filter>Archivos de origen\model\xeno_raven</Filter>
+    </Image>
+    <Image Include="model\xeno_raven\default_metallicRoughness.png">
+      <Filter>Archivos de origen\model\xeno_raven</Filter>
+    </Image>
+    <Image Include="model\xeno_raven\default_normal.png">
+      <Filter>Archivos de origen\model\xeno_raven</Filter>
+    </Image>
+    <Image Include="model\alien_egg\Material_normal.png">
+      <Filter>Archivos de origen\model\alien_egg</Filter>
+    </Image>
+    <Image Include="model\alien_egg\Material_baseColor.png">
+      <Filter>Archivos de origen\model\alien_egg</Filter>
+    </Image>
+    <Image Include="model\alien_egg\Material_metallicRoughness.png">
+      <Filter>Archivos de origen\model\alien_egg</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <Text Include="textures\notas.txt.txt">
       <Filter>Archivos de origen\textures</Filter>
     </Text>
-    <Text Include="D:\Descargas U\maze.txt" />
+    <Text Include="maze.txt">
+      <Filter>Archivos de origen</Filter>
+    </Text>
   </ItemGroup>
 </Project>

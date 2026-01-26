@@ -132,8 +132,12 @@
     <ClCompile Include="Proyectopruebatexture.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="model\alien_egg\alien_egg.bin" />
+    <None Include="model\alien_egg\alien_egg.gltf" />
     <None Include="model\xenomorph\xenomorph.bin" />
     <None Include="model\xenomorph\xenomorph.gltf" />
+    <None Include="model\xeno_raven\xeno_raven.bin" />
+    <None Include="model\xeno_raven\xeno_raven.gltf" />
     <None Include="shaders\B2T3.fs" />
     <None Include="shaders\B2T3.vs" />
     <None Include="shaders\light_cube.fs" />
@@ -146,6 +150,9 @@
     <None Include="shaders\screen.vs" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="model\alien_egg\Material_baseColor.png" />
+    <Image Include="model\alien_egg\Material_metallicRoughness.png" />
+    <Image Include="model\alien_egg\Material_normal.png" />
     <Image Include="model\xenomorph\MI_K33Arms007_baseColor.png" />
     <Image Include="model\xenomorph\MI_K33Arms007_normal.jpeg" />
     <Image Include="model\xenomorph\MI_K33Arms007_normal.jpg" />
@@ -164,6 +171,12 @@
     <Image Include="model\xenomorph\MI_K33Tail007_baseColor.png" />
     <Image Include="model\xenomorph\MI_K33Tail007_normal.jpeg" />
     <Image Include="model\xenomorph\MI_K33Tail007_normal.jpg" />
+    <Image Include="model\xeno_raven\07_-_Default_baseColor.png" />
+    <Image Include="model\xeno_raven\07_-_Default_metallicRoughness.png" />
+    <Image Include="model\xeno_raven\07_-_Default_normal.png" />
+    <Image Include="model\xeno_raven\default_baseColor.png" />
+    <Image Include="model\xeno_raven\default_metallicRoughness.png" />
+    <Image Include="model\xeno_raven\default_normal.png" />
     <Image Include="textures\Finalpa1.png" />
     <Image Include="textures\Finalpa2.png" />
     <Image Include="textures\Finalpainsano1.png" />
@@ -202,6 +215,7 @@
     <Image Include="textures\win.png" />
   </ItemGroup>
   <ItemGroup>
+    <Text Include="maze.txt" />
     <Text Include="textures\notas.txt.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

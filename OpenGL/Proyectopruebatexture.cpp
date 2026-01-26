@@ -1,4 +1,4 @@
-// ===================== LABERINTO DESDE TXT - SIN TEXTURAS =====================
+// ===================== Juego Laberinto =====================
 // Lee un archivo maze.txt (0 = vacío, 1 = suelo, E = salida)
 // Requiere B2T3.fs con uniform vec3 baseColor (sin samplear texture1).
 

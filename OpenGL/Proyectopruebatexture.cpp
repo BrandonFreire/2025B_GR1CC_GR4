@@ -1159,8 +1159,8 @@ static void SetupXenoStatic() {
         // 1. POSICIONAR AL XENO 
         // ---------------------------------------------------------
         xenoStaticPos = CellToWorld(r, c);
-        xenoStaticPos.z += 1.5f; 
-        xenoStaticPos.x += 2.5f; 
+        xenoStaticPos.z += 1.0f; 
+        xenoStaticPos.x += 3.0f; 
         xenoStaticPos.y = 0.0f;
 
         xenoStaticActive = true;

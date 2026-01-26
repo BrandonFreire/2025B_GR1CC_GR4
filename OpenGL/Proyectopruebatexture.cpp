@@ -1,3 +1,501 @@
+// ===================== Juego Laberinto =====================
+// Lee un archivo maze.txt (0 = vacío, 1 = suelo, E = salida)
+// Requiere B2T3.fs con uniform vec3 baseColor (sin samplear texture1).
+
+// ===================== FORZAR GPU DEDICADA =====================
+// Estas exportaciones indican a los drivers de NVIDIA y AMD que
+// utilicen la tarjeta gráfica dedicada en lugar de la integrada.
+#ifdef _WIN32
+extern "C" {
+    __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
+}
+#endif
+
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+#include <learnopengl/shader.h>
+#include <learnopengl/model_animation.h>   
+#include <learnopengl/animation.h>          
+#include <learnopengl/animator.h>  
+
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+
+#include <queue>
+#include <algorithm>
+#include <array>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <learnopengl/stb_image.h>
+#include <learnopengl/camera.h>
+
+// Estructura simple para coordenadas de grid
+struct Point { int r, c; };
+
+// Estructura del Enemigo
+bool gameOver = false;
+unsigned int gameOverTex = 0;
+const float ENEMY_KILL_RADIUS = 0.8f;
+
+struct Enemy {
+    glm::vec3 pos;      // Posición suave (interpolada) en el mundo
+    int r, c;           // Posición lógica actual en el grid
+    float speed = 2.5f; // Velocidad de movimiento
+
+    // Variables para animación
+    float animTime = 0.0f;     // Tiempo actual de la animación
+    float rotation = 0.0f;     // Rotación hacia donde mira el enemigo  <-- ESTE CAMPO
+    glm::vec3 lastPos;         // Posición anterior
+    bool isMoving = false;     // Si está en movimiento
+
+    // ===== OPTIMIZACIÓN BFS: Caché del camino =====
+    std::vector<Point> cachedPath;  // Camino cacheado hacia el jugador
+    int lastPlayerR = -1;           // Última posición conocida del jugador (fila)
+    int lastPlayerC = -1;           // Última posición conocida del jugador (columna)
+    int lastEnemyR = -1;            // Última posición del enemigo cuando se calculó el camino
+    int lastEnemyC = -1;            // Última posición del enemigo cuando se calculó el camino
+    float pathRecalcTimer = 0.0f;   // Timer para recalcular camino periódicamente
+};
+
+// Variables globales para los enemigos
+Enemy enemy1;//, enemy2;
+
+// ================= CUBOS COLECCIONABLES =================
+struct Collectible {
+    glm::vec3 pos; // Posición en el mundo
+    bool collected; // Si ya fue recogido
+    int r, c; // Celda del grid
+    bool isPreview = false; // Si es un preview (no cuenta en el total)
+};
+
+std::vector<Collectible> collectibles;
+int collectedCount = 0;
+const int TOTAL_COLLECTIBLES = 5;
+
+// ================= CONFIG =================
+// prototipos colisión (para que processInput los vea)
+static inline void MoveWithCollision(const glm::vec3& deltaXZ);
+
+const unsigned int SCR_WIDTH = 1920;
+const unsigned int SCR_HEIGHT = 1080;
+
+float deltaTime = 0.0f;
+float lastFrame = 0.0f;
+const float CELL_EPS = 1e-4f;   // epsilon contra errores de float
+bool gameWin = false;
+unsigned int gameWinTex = 0;
+
+// ================= ESCALA =================
+// Se calcula MAP_W/MAP_H desde el TXT. TILE mantiene tamaño similar a tu ROOM_SIZE (~30).
+const float TILE = 0.75f;             // 155 * 0.20 ≈ 31 (si tu mapa es 155 de ancho)
+const float WALL_HEIGHT = 4.0f;       // paredes más bajas
+const float LIGHT_CUBE_SCALE = 0.50f;
+
+// ================= LUZ =================
+glm::vec3 lightPos(0.0f, 6.0f, 0.0f);
+bool linternaEncendida = false;
+
+// ================= MINIMAPA =================
+const int MINIMAP_RADIUS = 8;
+const float MINIMAP_SIZE = 200.0f;
+const float MINIMAP_MARGIN = 20.0f;
+const float MINIMAP_CELL_SIZE = MINIMAP_SIZE / (MINIMAP_RADIUS * 2 + 1);
+
+// ================= MOVIMIENTO ALEATORIO ENEMY1 =================
+Point enemy1RandomTarget = { 0, 0 };
+bool enemy1HasTarget = false;
+
+// ================= MODO VISTA AEREA =================
+bool modoAereo = false;
+float alturaAerea = 50.0f;  // Altura cuando vuelas sobre el laberinto
+float alturaOriginal = 2.0f; // Altura normal del jugador
+
+// ================= CAMARA =================
+// Usar la clase Camera de learnopengl/camera.h
+Camera camera(glm::vec3(0.0f, 2.0f, 10.0f));
+
+float lastX = SCR_WIDTH / 2.0f;
+float lastY = SCR_HEIGHT / 2.0f;
+bool firstMouse = true;
+
+// ================= CALLBACKS =================
+void framebuffer_size_callback(GLFWwindow*, int w, int h) {
+    glViewport(0, 0, w, h);
+}
+
+void mouse_callback(GLFWwindow*, double xpos, double ypos) {
+    if (firstMouse) {
+        lastX = (float)xpos;
+        lastY = (float)ypos;
+        firstMouse = false;
+    }
+    float xoffset = (float)xpos - lastX;
+    float yoffset = lastY - (float)ypos; // invertido porque y crece hacia abajo
+    lastX = (float)xpos;
+    lastY = (float)ypos;
+
+    camera.ProcessMouseMovement(xoffset, yoffset);
+}
+
+// ================= INPUT =================
+void processInput(GLFWwindow* window) {
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, true);
+
+    // Toggle modo aéreo con SPACE (subir)
+    static bool spacePrevState = false;
+    bool spaceState = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+    if (spaceState && !spacePrevState && !modoAereo) {
+        modoAereo = true;
+        camera.Position.y = alturaAerea;
+        // Mirar hacia abajo
+        camera.Pitch = -89.0f;
+        camera.ProcessMouseMovement(0, 0); // Actualizar vectores de cámara
+    }
+    spacePrevState = spaceState;
+
+    // Bajar con LEFT SHIFT
+    static bool shiftPrevState = false;
+    bool shiftState = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+    if (shiftState && !shiftPrevState && modoAereo) {
+        modoAereo = false;
+        camera.Position.y = alturaOriginal;
+        camera.Pitch = 0.0f;
+        camera.ProcessMouseMovement(0, 0); // Actualizar vectores de cámara
+    }
+    shiftPrevState = shiftState;
+
+    glm::vec3 move(0.0f);
+
+    // Velocidad de movimiento
+    camera.MovementSpeed = 6.0f;
+
+    if (modoAereo) {
+        // Movimiento libre en modo aéreo (sin colisiones)
+        float v = camera.MovementSpeed * 3.0f * deltaTime; // Más rápido en el aire
+
+        // Movimiento horizontal basado en la orientación
+        glm::vec3 forward = glm::normalize(glm::vec3(camera.Front.x, 0.0f, camera.Front.z));
+        glm::vec3 right = glm::normalize(glm::vec3(camera.Right.x, 0.0f, camera.Right.z));
+
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) camera.Position += forward * v;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) camera.Position -= forward * v;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) camera.Position -= right * v;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) camera.Position += right * v;
+
+        // Subir/bajar con Q/E en modo aéreo
+        if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) camera.Position.y -= v;
+        if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) camera.Position.y += v;
+    }
+    else {
+        // Movimiento normal con colisiones
+        glm::vec3 f = glm::normalize(glm::vec3(camera.Front.x, 0.0f, camera.Front.z));
+        glm::vec3 r = glm::normalize(glm::vec3(camera.Right.x, 0.0f, camera.Right.z));
+
+        float v = camera.MovementSpeed * deltaTime;
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) move += f * v;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) move -= f * v;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) move -= r * v;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) move += r * v;
+
+        if (move.x != 0.0f || move.z != 0.0f)
+            MoveWithCollision(move);
+    }
+
+    // Linterna L
+    static bool lPrevState = false;
+    bool lState = glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS;
+    if (lState && !lPrevState) linternaEncendida = !linternaEncendida;
+    lPrevState = lState;
+}
+
+// ================= MAPA DESDE ARCHIVO TXT =================
+static std::vector<std::string> MAP;
+static int MAP_W = 0;
+static int MAP_H = 0;
+
+static bool LoadMapFromTxt(const std::string& path) {
+    std::ifstream in(path);
+    if (!in.is_open()) {
+        std::cerr << "No se pudo abrir el archivo: " << path << "\n";
+        return false;
+    }
+
+    MAP.clear();
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && (line.back() == '\r')) line.pop_back(); // por si el txt tiene CRLF
+        if (line.empty()) continue;
+        MAP.push_back(line);
+    }
+    in.close();
+
+    if (MAP.empty()) {
+        std::cerr << "El archivo está vacio.\n";
+        return false;
+    }
+
+    MAP_H = (int)MAP.size();
+    MAP_W = (int)MAP[0].size();
+
+    // Validación: todas las filas mismo ancho
+    for (int r = 0; r < MAP_H; r++) {
+        if ((int)MAP[r].size() != MAP_W) {
+            std::cerr << "Error: fila " << r << " tiene ancho " << MAP[r].size()
+                << " pero se esperaba " << MAP_W << "\n";
+            return false;
+        }
+    }
+
+    std::cout << "Mapa cargado OK: " << MAP_W << "x" << MAP_H << "\n";
+    return true;
+}
+
+static inline bool InBounds(int r, int c) {
+    return r >= 0 && c >= 0 && r < MAP_H && c < MAP_W;
+}
+
+static inline char Cell(int r, int c) {
+    if (!InBounds(r, c)) return '0';
+    return MAP[r][c];
+}
+
+static inline bool IsFloor(int r, int c) {
+    char t = Cell(r, c);
+    return t == '1' || t == 'S' || t == 's';
+}
+
+// helper: exit and spawn checks
+static inline bool IsExit(int r, int c) { return Cell(r, c) == 'E'; }
+static inline bool IsSpawn(int r, int c) { char t = Cell(r, c); return t == 'S' || t == 's'; }
+
+
+static inline bool IsWall(int r, int c) {
+    char t = Cell(r, c);
+    return t == '0' || t == '2' || t == '3'; // paredes por tipo
+}
+
+static inline int WallType(int r, int c) {
+    char t = Cell(r, c);
+    if (t == '0') return 0;
+    if (t == '2') return 2;
+    if (t == '3') return 3;
+    return -1;
+}
+
+
+static glm::vec3 CellToWorld(int r, int c) {
+    float halfW = (MAP_W * TILE) * 0.5f;
+    float halfH = (MAP_H * TILE) * 0.5f;
+
+    float x = (c * TILE) - halfW + TILE * 0.5f;   // +0.5 tile => centro
+    float z = (halfH)-(r * TILE) - TILE * 0.5f; // -0.5 tile => centro
+    return glm::vec3(x, 0.0f, z);
+}
+
+
+
+static inline bool WalkableCell(int r, int c) {
+    return InBounds(r, c) && IsFloor(r, c); // SOLO suelo es caminable
+}
+
+// Convierte mundo (x,z) a celda (r,c) usando TU MISMO CellToWorld (sin invertir)
+
+
+// Revisa colisión con 4 puntos del radio (circle approx)
+// ==== COLISIONES (PLAYER CIRCLE vs WALL TILES) ====
+// sube/baja (con TILE=0.50, 0.12–0.18)
+const float PLAYER_RADIUS = 0.22f;
+// margen para NO pegarse (evita que la cámara "asome")
+const float PLAYER_SKIN = 0.03f;
+
+static inline void TileAABB(int r, int c, float& xMin, float& xMax, float& zMin, float& zMax) {
+    float halfW = (MAP_W * TILE) * 0.5f;
+    float halfH = (MAP_H * TILE) * 0.5f;
+
+    // x = c*TILE - halfW  (crece hacia +x)
+    xMin = (c * TILE) - halfW;
+    xMax = xMin + TILE;
+
+    // z = halfH - r*TILE  (crece hacia +z cuando r baja)
+    zMax = halfH - (r * TILE);
+    zMin = zMax - TILE;
+}
+
+static inline bool CircleAABB(float cx, float cz, float radius, float xMin, float xMax, float zMin, float zMax) {
+    // clamp
+    float x = (cx < xMin) ? xMin : (cx > xMax ? xMax : cx);
+    float z = (cz < zMin) ? zMin : (cz > zMax ? zMax : cz);
+
+    float dx = cx - x;
+    float dz = cz - z;
+    return (dx * dx + dz * dz) <= (radius * radius);
+}
+
+static inline bool CollidesAt(float x, float z) {
+    // revisa SOLO tiles cercanas (3x3) alrededor del jugador
+    float halfW = (MAP_W * TILE) * 0.5f;
+    float halfH = (MAP_H * TILE) * 0.5f;
+
+    int c0 = (int)floor((x + halfW) / TILE);
+    int r0 = (int)floor((halfH - z) / TILE);
+
+    float rad = PLAYER_RADIUS + PLAYER_SKIN;
+
+    for (int rr = r0 - 1; rr <= r0 + 1; rr++) {
+        for (int cc = c0 - 1; cc <= c0 + 1; cc++) {
+            // fuera del mapa = pared sólida
+            if (!InBounds(rr, cc) || IsWall(rr, cc)) {
+                float xMin, xMax, zMin, zMax;
+                // si está fuera, igual calculamos AABB "virtual" en esa celda
+                TileAABB(rr, cc, xMin, xMax, zMin, zMax);
+                if (CircleAABB(x, z, rad, xMin, xMax, zMin, zMax))
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
+
+static inline void MoveWithCollision(const glm::vec3& deltaXZ) {
+    glm::vec3 pos = camera.Position;
+
+    // pasos cortos para evitar tunneling
+    float len = glm::length(glm::vec2(deltaXZ.x, deltaXZ.z));
+    float maxStep = 0.02f; // mientras menor, más seguro
+    int steps = (len > 0.0f) ? (int)ceil(len / maxStep) : 1;
+
+    glm::vec3 step = deltaXZ / (float)steps;
+
+    for (int i = 0; i < steps; i++) {
+        // slide: X luego Z
+        glm::vec3 tryX = pos + glm::vec3(step.x, 0.0f, 0.0f);
+        if (!CollidesAt(tryX.x, tryX.z)) pos = tryX;
+
+        glm::vec3 tryZ = pos + glm::vec3(0.0f, 0.0f, step.z);
+        if (!CollidesAt(tryZ.x, tryZ.z)) pos = tryZ;
+    }
+
+    camera.Position = pos;
+}
+
+
+
+// Busca automáticamente un spawn: primera '1' encontrada (o si quieres, busca una marca 'S')
+static bool FindSpawn(int& outR, int& outC) {
+    // 1) si existe S o s, usarla
+    for (int r = 0; r < MAP_H; r++) {
+        for (int c = 0; c < MAP_W; c++) {
+            if (MAP[r][c] == 'S' || MAP[r][c] == 's') {
+                outR = r; outC = c;
+                return true;
+            }
+        }
+    }
+
+    // 2) fallback: primera celda de suelo
+    for (int r = 0; r < MAP_H; r++) {
+        for (int c = 0; c < MAP_W; c++) {
+            if (IsFloor(r, c)) { outR = r; outC = c; return true; }
+        }
+    }
+    return false;
+}
+
+// Convierte posición de Mundo a Grid (Inverso de CellToWorld)
+static Point WorldToCell(glm::vec3 pos) {
+    float halfW = (MAP_W * TILE) * 0.5f;
+    float halfH = (MAP_H * TILE) * 0.5f;
+    // Invertimos la fórmula de CellToWorld
+    int c = (int)((pos.x + halfW) / TILE);
+    int r = (int)((halfH - pos.z) / TILE);
+    return { r, c };
+}
+
+// =====================================================================
+// SISTEMA DE IA OPTIMIZADO PARA PERSECUCIÓN DEL ALIEN
+// =====================================================================
+// Características:
+// 1. BFS con caché inteligente (solo recalcula cuando es necesario)
+// 2. Persecución directa cuando está cerca
+// 3. Sin allocaciones en el game loop (buffers pre-allocados)
+// =====================================================================
+
+#include <unordered_set>
+#include <cmath>
+
+// ===== CONSTANTES DE PATHFINDING OPTIMIZADAS =====
+const int PATHFIND_MAX_NODES = 1500;       // Suficiente para mapas grandes
+const float PATH_RECALC_INTERVAL = 0.5f;   // Recalcular cada 0.5s máximo
+const int DIRECT_CHASE_DISTANCE = 5;       // Persecución directa si está cerca
+const int PLAYER_MOVE_THRESHOLD = 3;       // Recalcular si jugador se movió N celdas
+
+// ===== BUFFERS ESTÁTICOS REUTILIZABLES (SIN ALLOCACIONES EN RUNTIME) =====
+static std::vector<std::vector<int>> bfsDistance;      // Distancia desde el inicio
+static std::vector<std::vector<bool>> bfsVisited;      // Nodos visitados
+static std::vector<Point> bfsQueue;                     // Cola BFS pre-allocada
+static int bfsQueueHead = 0, bfsQueueTail = 0;
+static bool pathfindBuffersInit = false;
+
+// Direcciones de movimiento (arriba, abajo, izquierda, derecha)
+static const int DIR_R[] = { -1, 1, 0, 0 };
+static const int DIR_C[] = { 0, 0, -1, 1 };
+
+// ===== INICIALIZACIÓN DE BUFFERS (una sola vez) =====
+static void InitPathfindBuffers() {
+    if (pathfindBuffersInit && (int)bfsDistance.size() == MAP_H) return;
+
+    bfsDistance.assign(MAP_H, std::vector<int>(MAP_W, -1));
+    bfsVisited.assign(MAP_H, std::vector<bool>(MAP_W, false));
+    bfsQueue.resize(MAP_H * MAP_W); // Pre-allocar para el peor caso
+    pathfindBuffersInit = true;
+}
+
+// ===== RESET RÁPIDO DE BUFFERS (solo la región usada) =====
+static void ResetBFSBuffers(int centerR, int centerC, int radius) {
+    int minR = std::max(0, centerR - radius);
+    int maxR = std::min(MAP_H - 1, centerR + radius);
+    int minC = std::max(0, centerC - radius);
+    int maxC = std::min(MAP_W - 1, centerC + radius);
+
+    for (int r = minR; r <= maxR; r++) {
+        for (int c = minC; c <= maxC; c++) {
+            bfsDistance[r][c] = -1;
+            bfsVisited[r][c] = false;
+        }
+    }
+    bfsQueueHead = 0;
+    bfsQueueTail = 0;
+}
+
+// =====================================================================
+// ESTRUCTURAS PARA OPTIMIZACIÓN DE RENDERIZADO
+// =====================================================================
+
+// Información pre-calculada de cada pared
+struct WallInfo {
+    int textureIndex;      // Índice de textura (0-5 para hall, 6 para room, 7-8 para indie)
+    bool flipTexY;         // Si debe voltear la textura
+};
+
+// Pre-cálculo de texturas por celda y dirección (N, S, W, E)
+static std::vector<std::vector<std::array<WallInfo, 4>>> wallTextureCache;
+static bool wallTextureCacheInit = false;
+
+// Estructura para geometría batched del laberinto
+struct MazeBatch {
+    unsigned int VAO, VBO;
+    int vertexCount;
+    unsigned int textureID;
+};
 
 // Batches separados por textura
 static std::vector<MazeBatch> mazeBatches;
@@ -334,7 +832,6 @@ static void BuildMazeGeometry() {
         glEnableVertexAttribArray(2);
 
         glBindVertexArray(0);
-        glBindVertexArray(0);
 
         mazeBatches.push_back(batch);
 
@@ -575,12 +1072,13 @@ static unsigned int loadTexture(const char* path, bool flip = true) {
     }
     stbi_image_free(data);
     return id;
+}
 // ================= RESET DEL JUEGO =================
 void ResetGame() {
     // Reset flags
     gameOver = false;
     gameWin = false;
-    gameOver = false;
+
     // Reset tiempo (evita deltaTime gigante)
     lastFrame = (float)glfwGetTime();
 
@@ -600,10 +1098,6 @@ void ResetGame() {
     // ===== RESET COLECCIONABLES =====
     SpawnCollectibles(camera.Position);
 }
-
-}
-=========
->>>>>>>>> Temporary merge branch 2
 
 // ================= MAIN =================
 
@@ -684,17 +1178,14 @@ int main() {
     glBindBuffer(GL_ARRAY_BUFFER, screenVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(screenQuad), screenQuad, GL_STATIC_DRAW);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0); glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
+    glBindVertexArray(0);
+
+    unsigned int startTex = loadTexture("textures/portada.png");
     gameOverTex = loadTexture("textures/gameover.png");
-    gameWinTex = loadTexture("textures/win.png"); 
+    gameWinTex = loadTexture("textures/win.png");
 
 
-<<<<<<<<< Temporary merge branch 1
-    gameOverTex = loadTexture("textures/gameover.png");
-    gameWinTex = loadTexture("textures/win.png"); 
-
-
-=========
->>>>>>>>> Temporary merge branch 2
     screenShader.use();
     screenShader.setInt("screenTex", 0);
 
@@ -763,17 +1254,14 @@ int main() {
     g_allTextures[3] = wallHallTex[3];
     g_allTextures[4] = wallHallTex[4];
     g_allTextures[5] = wallHallTex[5];
-  
+    g_allTextures[6] = wallRoomTex;
     g_allTextures[7] = wallindie1;
     g_allTextures[8] = wallindie2;
 
     // ===== PRE-CALCULAR TEXTURAS Y GEOMETRÍA DEL LABERINTO =====
     PrecomputeWallTextures();
     BuildMazeGeometry();
-<<<<<<<<< Temporary merge branch 1
-  
-=========
->>>>>>>>> Temporary merge branch 2
+
 
     bool gameStarted = false;
     bool lastEnter = false;
@@ -930,6 +1418,16 @@ int main() {
             if (enter && !lastEnter) {
                 gameStarted = true;
                 lastFrame = (float)glfwGetTime();
+            }
+            lastEnter = enter;
+
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            screenShader.use();
+            glBindVertexArray(screenVAO);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, startTex);
+
             glDisable(GL_DEPTH_TEST);
             glDrawArrays(GL_TRIANGLES, 0, 6);
             glEnable(GL_DEPTH_TEST);
@@ -987,19 +1485,12 @@ int main() {
             screenShader.use();
             glBindVertexArray(screenVAO);
 
-                gameWin = false;
-            }
-            enterPrevWin = enter;
-
-            // ---- DIBUJAR PANTALLA WIN ----
-            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-
-
-
-
             glDisable(GL_DEPTH_TEST);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, gameWinTex);
+
             glDrawArrays(GL_TRIANGLES, 0, 6);
+
             glEnable(GL_DEPTH_TEST);
 
             glfwSwapBuffers(window);
@@ -1008,8 +1499,6 @@ int main() {
 
 
 
-=========
->>>>>>>>> Temporary merge branch 2
 
         float time = (float)glfwGetTime();
         deltaTime = time - lastFrame;
@@ -1115,34 +1604,24 @@ int main() {
                 }
                 else if (batchIdx == 9) {
                     // Suelo
+                    shader.setBool("useTexture", true);
+                    shader.setBool("useWorldUV", false);
+                    shader.setVec2("texScale2", glm::vec2(0.5f, 0.5f));
+                    shader.setBool("flipTexY", false);
                     glActiveTexture(GL_TEXTURE0);
-                glDrawArrays(GL_TRIANGLES, 0, batch.vertexCount);
-                batchIdx++;
-            }
-
-            }
-            
->>>>>>>>> Temporary merge branch 2
-            }
-            
->>>>>>>>> Temporary merge branch 2
+                    glBindTexture(GL_TEXTURE_2D, floorRoomTex);
+                    shader.setVec3("baseColor", glm::vec3(1.0f));
+                }
+                else {
                     // Techo (sin textura)
                     shader.setBool("useTexture", false);
                     shader.setVec3("baseColor", glm::vec3(0.25f, 0.25f, 0.25f));
                 }
-<<<<<<<<< Temporary merge branch 1
 
                 glDrawArrays(GL_TRIANGLES, 0, batch.vertexCount);
                 batchIdx++;
             }
 
-=========
-                
-                glDrawArrays(GL_TRIANGLES, 0, batch.vertexCount);
-                batchIdx++;
-            }
-            
->>>>>>>>> Temporary merge branch 2
             shader.setBool("useTexture", false);
         }
 
@@ -1152,18 +1631,7 @@ int main() {
 
         Enemy* enemies[] = { &enemy1/*, &enemy2*/ };
         for (Enemy* e : enemies) {
-            for (Enemy* e : enemies) {
-                float d = glm::distance(
-                    glm::vec2(camera.Position.x, camera.Position.z),
-                    glm::vec2(e->pos.x, e->pos.z)
-                );
             // Usar BFS para encontrar el siguiente paso
-                if (d < ENEMY_KILL_RADIUS) {
-                    gameOver = true;
-                    break;
-                }
-            }
-
             Point nextCell = GetNextStepBFS(e->r, e->c, playerGrid.r, playerGrid.c);
 
             // 2. Obtener posición world del centro de esa casilla
@@ -1179,6 +1647,17 @@ int main() {
                 // Actualizar tiempo de animación
                 e->animTime += deltaTime * 5.0f;
                 if (e->animTime > 6.28318f) e->animTime -= 6.28318f;
+            }
+            for (Enemy* e : enemies) {
+                float d = glm::distance(
+                    glm::vec2(camera.Position.x, camera.Position.z),
+                    glm::vec2(e->pos.x, e->pos.z)
+                );
+
+                if (d < ENEMY_KILL_RADIUS) {
+                    gameOver = true;
+                    break;
+                }
             }
 
             // SIEMPRE calcular la rotación hacia el jugador (no hacia donde se mueve)

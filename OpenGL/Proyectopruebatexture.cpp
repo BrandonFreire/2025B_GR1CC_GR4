@@ -85,6 +85,7 @@ const int TOTAL_COLLECTIBLES = 5;
 // ================= CONFIG =================
 // prototipos colisión (para que processInput los vea)
 static inline void MoveWithCollision(const glm::vec3& deltaXZ);
+void ResetGame(); // Prototipo para el menú de pausa
 
 // Variables de resolución (se inicializarán con la del monitor)
 unsigned int SCR_WIDTH = 1920;
@@ -95,6 +96,19 @@ float lastFrame = 0.0f;
 const float CELL_EPS = 1e-4f;   // epsilon contra errores de float
 bool gameWin = false;
 unsigned int gameWinTex = 0;
+
+// ================= MENÚ DE PAUSA =================
+bool gamePaused = false;
+bool showPauseMenu = false;
+
+// Estructura para los botones del menú
+struct MenuButton {
+    float x, y, width, height;
+    std::string text;
+    int action; // 0=continuar, 1=reiniciar, 2=salir
+};
+
+std::vector<MenuButton> pauseButtons;
 
 // ================= VARIABLES ANIMACIÓN DESPERTAR =================
 bool isWakingUp = true;          // ¿Está en proceso de levantarse?
@@ -149,13 +163,68 @@ void mouse_callback(GLFWwindow*, double xpos, double ypos) {
     lastX = (float)xpos;
     lastY = (float)ypos;
 
-    camera.ProcessMouseMovement(xoffset, yoffset);
+    // Solo procesar movimiento de cámara si NO está pausado
+    if (!gamePaused) {
+        camera.ProcessMouseMovement(xoffset, yoffset);
+    }
+}
+
+// Callback para clics del mouse
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS && showPauseMenu) {
+        double xpos, ypos;
+        glfwGetCursorPos(window, &xpos, &ypos);
+        
+        // Convertir coordenadas de ventana a coordenadas del menú
+        float mouseX = (float)xpos;
+        float mouseY = SCR_HEIGHT - (float)ypos; // Invertir Y
+        
+        // Verificar clics en botones
+        for (const auto& btn : pauseButtons) {
+            if (mouseX >= btn.x && mouseX <= btn.x + btn.width &&
+                mouseY >= btn.y && mouseY <= btn.y + btn.height) {
+                
+                if (btn.action == 0) { // Continuar
+                    gamePaused = false;
+                    showPauseMenu = false;
+                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                }
+                else if (btn.action == 1) { // Reiniciar
+                    ResetGame();
+                    gamePaused = false;
+                    showPauseMenu = false;
+                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                }
+                else if (btn.action == 2) { // Salir
+                    glfwSetWindowShouldClose(window, true);
+                }
+                break;
+            }
+        }
+    }
 }
 
 // ================= INPUT =================
 void processInput(GLFWwindow* window) {
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
+    // Tecla ESC o P para pausar/despausar
+    static bool pausePrevState = false;
+    bool pauseState = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS || 
+                      glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    
+    if (pauseState && !pausePrevState) {
+        gamePaused = !gamePaused;
+        showPauseMenu = gamePaused;
+        
+        if (gamePaused) {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        } else {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        }
+    }
+    pausePrevState = pauseState;
+    
+    // Si está pausado, no procesar más input
+    if (gamePaused) return;
     
     // Si se está levantando, no dejamos que se mueva
     if (isWakingUp) return;
@@ -1203,6 +1272,47 @@ static void SetupXenoStatic() {
     }
 }
 
+// Función para inicializar los botones del menú de pausa
+static void SetupPauseMenu() {
+    pauseButtons.clear();
+    
+    float centerX = SCR_WIDTH / 2.0f;
+    float centerY = SCR_HEIGHT / 2.0f;
+    float btnWidth = 300.0f;
+    float btnHeight = 80.0f;
+    float spacing = 100.0f;
+    
+    // Botón Continuar
+    MenuButton btnContinue;
+    btnContinue.x = centerX - btnWidth / 2.0f;
+    btnContinue.y = centerY + spacing;
+    btnContinue.width = btnWidth;
+    btnContinue.height = btnHeight;
+    btnContinue.text = "CONTINUAR";
+    btnContinue.action = 0;
+    pauseButtons.push_back(btnContinue);
+    
+    // Botón Reiniciar
+    MenuButton btnRestart;
+    btnRestart.x = centerX - btnWidth / 2.0f;
+    btnRestart.y = centerY;
+    btnRestart.width = btnWidth;
+    btnRestart.height = btnHeight;
+    btnRestart.text = "REINICIAR";
+    btnRestart.action = 1;
+    pauseButtons.push_back(btnRestart);
+    
+    // Botón Salir
+    MenuButton btnExit;
+    btnExit.x = centerX - btnWidth / 2.0f;
+    btnExit.y = centerY - spacing;
+    btnExit.width = btnWidth;
+    btnExit.height = btnHeight;
+    btnExit.text = "SALIR";
+    btnExit.action = 2;
+    pauseButtons.push_back(btnExit);
+}
+
 
 // ================= MAIN =================
 
@@ -1234,6 +1344,7 @@ int main() {
 
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
@@ -1241,6 +1352,9 @@ int main() {
         return -1;
     }
     glEnable(GL_DEPTH_TEST);
+    
+    // Configurar menú de pausa con la resolución correcta
+    SetupPauseMenu();
 
     Shader shader("shaders/B2T3.vs", "shaders/B2T3.fs");
     if (shader.ID == 0) shader = Shader("shaders/B2T3.vs", "shaders/B2T3.fs");
@@ -1630,7 +1744,11 @@ int main() {
 
         float time = (float)glfwGetTime();
         deltaTime = time - lastFrame;
-        lastFrame = time;
+        
+        // Si está pausado, no actualizar el tiempo del juego
+        if (!gamePaused) {
+            lastFrame = time;
+        }
 
         // ================= ANIMACIÓN DE LEVANTARSE =================
         if (isWakingUp) {
@@ -2181,6 +2299,261 @@ int main() {
             glDrawArrays(GL_TRIANGLES, 0, 6);
             minimapShader.setVec2("offset", glm::vec2(mapX + MINIMAP_SIZE + 3, mapY - 5));
             minimapShader.setVec2("scale", glm::vec2(3, MINIMAP_SIZE + 10));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            glDisable(GL_BLEND);
+            glEnable(GL_DEPTH_TEST);
+        }
+
+        // ================= DIBUJAR MENÚ DE PAUSA =================
+        if (showPauseMenu) {
+            glDisable(GL_DEPTH_TEST);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+            minimapShader.use();
+            glm::mat4 pauseProj = glm::ortho(0.0f, (float)SCR_WIDTH, 0.0f, (float)SCR_HEIGHT);
+            minimapShader.setMat4("projection", pauseProj);
+            glBindVertexArray(minimapVAO);
+
+            // Fondo semi-transparente oscuro
+            minimapShader.setVec3("color", glm::vec3(0.0f, 0.0f, 0.0f));
+            minimapShader.setVec2("offset", glm::vec2(0.0f, 0.0f));
+            minimapShader.setVec2("scale", glm::vec2((float)SCR_WIDTH, (float)SCR_HEIGHT));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+
+            // Obtener posición del mouse para hover effect
+            double mouseX, mouseY;
+            glfwGetCursorPos(window, &mouseX, &mouseY);
+            mouseY = SCR_HEIGHT - mouseY; // Invertir Y
+
+            // Dibujar botones con colores distintivos
+            for (int i = 0; i < pauseButtons.size(); i++) {
+                const auto& btn = pauseButtons[i];
+                bool isHovered = (mouseX >= btn.x && mouseX <= btn.x + btn.width &&
+                                  mouseY >= btn.y && mouseY <= btn.y + btn.height);
+
+                // Colores específicos para cada botón
+                glm::vec3 btnColor;
+                glm::vec3 btnColorHover;
+                
+                if (btn.action == 0) { // CONTINUAR (Verde)
+                    btnColor = glm::vec3(0.1f, 0.4f, 0.1f);
+                    btnColorHover = glm::vec3(0.2f, 0.6f, 0.2f);
+                } else if (btn.action == 1) { // REINICIAR (Amarillo/Naranja)
+                    btnColor = glm::vec3(0.4f, 0.3f, 0.0f);
+                    btnColorHover = glm::vec3(0.6f, 0.5f, 0.1f);
+                } else { // SALIR (Rojo)
+                    btnColor = glm::vec3(0.4f, 0.1f, 0.1f);
+                    btnColorHover = glm::vec3(0.6f, 0.2f, 0.2f);
+                }
+                
+                glm::vec3 finalColor = isHovered ? btnColorHover : btnColor;
+                
+                // Dibujar fondo del botón
+                minimapShader.setVec3("color", finalColor);
+                minimapShader.setVec2("offset", glm::vec2(btn.x, btn.y));
+                minimapShader.setVec2("scale", glm::vec2(btn.width, btn.height));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+
+                // Dibujar borde del botón (más brillante si está hover)
+                glm::vec3 borderColor = isHovered ? glm::vec3(1.0f, 1.0f, 1.0f) : glm::vec3(0.6f, 0.6f, 0.6f);
+                float borderThick = isHovered ? 4.0f : 2.0f;
+                
+                // Borde superior
+                minimapShader.setVec3("color", borderColor);
+                minimapShader.setVec2("offset", glm::vec2(btn.x, btn.y + btn.height - borderThick));
+                minimapShader.setVec2("scale", glm::vec2(btn.width, borderThick));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                
+                // Borde inferior
+                minimapShader.setVec2("offset", glm::vec2(btn.x, btn.y));
+                minimapShader.setVec2("scale", glm::vec2(btn.width, borderThick));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                
+                // Borde izquierdo
+                minimapShader.setVec2("offset", glm::vec2(btn.x, btn.y));
+                minimapShader.setVec2("scale", glm::vec2(borderThick, btn.height));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                
+                // Borde derecho
+                minimapShader.setVec2("offset", glm::vec2(btn.x + btn.width - borderThick, btn.y));
+                minimapShader.setVec2("scale", glm::vec2(borderThick, btn.height));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+
+                // ===== DIBUJAR ICONOS VISUALES PARA IDENTIFICAR CADA BOTÓN =====
+                float iconSize = 40.0f;
+                float iconX = btn.x + btn.width / 2.0f - iconSize / 2.0f;
+                float iconY = btn.y + btn.height / 2.0f - iconSize / 2.0f;
+                
+                if (btn.action == 0) { // CONTINUAR - Triángulo play (▶)
+                    float triSize = 30.0f;
+                    float triX = btn.x + btn.width / 2.0f - triSize / 3.0f;
+                    float triY = btn.y + btn.height / 2.0f;
+                    
+                    // Triángulo apuntando a la derecha (3 cuadrados formando ▶)
+                    minimapShader.setVec3("color", glm::vec3(0.8f, 1.0f, 0.8f));
+                    minimapShader.setVec2("offset", glm::vec2(triX, triY - 5));
+                    minimapShader.setVec2("scale", glm::vec2(25, 10));
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    
+                    minimapShader.setVec2("offset", glm::vec2(triX + 10, triY - 10));
+                    minimapShader.setVec2("scale", glm::vec2(15, 20));
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    
+                    minimapShader.setVec2("offset", glm::vec2(triX + 20, triY - 15));
+                    minimapShader.setVec2("scale", glm::vec2(8, 30));
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    
+                } else if (btn.action == 1) { // REINICIAR - Flecha circular (↻)
+                    float arrowSize = 35.0f;
+                    float arrowX = btn.x + btn.width / 2.0f - arrowSize / 2.0f;
+                    float arrowY = btn.y + btn.height / 2.0f - arrowSize / 2.0f;
+                    
+                    // Círculo exterior (4 segmentos)
+                    minimapShader.setVec3("color", glm::vec3(1.0f, 0.9f, 0.6f));
+                    minimapShader.setVec2("offset", glm::vec2(arrowX + 10, arrowY + 25));
+                    minimapShader.setVec2("scale", glm::vec2(15, 6));
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    
+                    minimapShader.setVec2("offset", glm::vec2(arrowX + 25, arrowY + 15));
+                    minimapShader.setVec2("scale", glm::vec2(6, 15));
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    
+                    minimapShader.setVec2("offset", glm::vec2(arrowX + 10, arrowY + 4));
+                    minimapShader.setVec2("scale", glm::vec2(15, 6));
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    
+                    minimapShader.setVec2("offset", glm::vec2(arrowX + 4, arrowY + 10));
+                    minimapShader.setVec2("scale", glm::vec2(6, 15));
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    
+                    // Flecha superior
+                    minimapShader.setVec2("offset", glm::vec2(arrowX + 15, arrowY + 28));
+                    minimapShader.setVec2("scale", glm::vec2(8, 10));
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    
+                } else { // SALIR - X grande
+                    float xSize = 35.0f;
+                    float xX = btn.x + btn.width / 2.0f - xSize / 2.0f;
+                    float xY = btn.y + btn.height / 2.0f - xSize / 2.0f;
+                    
+                    // Diagonal \
+                    minimapShader.setVec3("color", glm::vec3(1.0f, 0.7f, 0.7f));
+                    for (int d = 0; d < 6; d++) {
+                        minimapShader.setVec2("offset", glm::vec2(xX + d * 5, xY + d * 5));
+                        minimapShader.setVec2("scale", glm::vec2(8, 8));
+                        glDrawArrays(GL_TRIANGLES, 0, 6);
+                    }
+                    
+                    // Diagonal /
+                    for (int d = 0; d < 6; d++) {
+                        minimapShader.setVec2("offset", glm::vec2(xX + 28 - d * 5, xY + d * 5));
+                        minimapShader.setVec2("scale", glm::vec2(8, 8));
+                        glDrawArrays(GL_TRIANGLES, 0, 6);
+                    }
+                }
+            }
+
+            // Título PAUSA con borde
+            float titleY = SCR_HEIGHT / 2.0f + 250.0f;
+            float titleWidth = 500.0f;
+            float titleHeight = 120.0f;
+            float titleX = SCR_WIDTH / 2.0f - titleWidth / 2.0f;
+            
+            // Borde del título (negro)
+            minimapShader.setVec3("color", glm::vec3(0.0f, 0.0f, 0.0f));
+            minimapShader.setVec2("offset", glm::vec2(titleX - 5, titleY - 5));
+            minimapShader.setVec2("scale", glm::vec2(titleWidth + 10, titleHeight + 10));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            
+            // Título principal (blanco brillante)
+            minimapShader.setVec3("color", glm::vec3(1.0f, 1.0f, 1.0f));
+            minimapShader.setVec2("offset", glm::vec2(titleX, titleY));
+            minimapShader.setVec2("scale", glm::vec2(titleWidth, titleHeight));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            
+            // Letras "P A U S A" simuladas con rectángulos
+            float letterSpacing = 80.0f;
+            float letterWidth = 60.0f;
+            float letterHeight = 80.0f;
+            float lettersStartX = titleX + (titleWidth - (5 * letterSpacing)) / 2.0f + 20;
+            float lettersY = titleY + 20;
+            
+            minimapShader.setVec3("color", glm::vec3(0.1f, 0.1f, 0.2f));
+            
+            // P
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY));
+            minimapShader.setVec2("scale", glm::vec2(12, letterHeight));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY + letterHeight - 12));
+            minimapShader.setVec2("scale", glm::vec2(40, 12));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX + 28, lettersY + 40));
+            minimapShader.setVec2("scale", glm::vec2(12, 30));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY + 40));
+            minimapShader.setVec2("scale", glm::vec2(40, 12));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            
+            // A
+            lettersStartX += letterSpacing;
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY));
+            minimapShader.setVec2("scale", glm::vec2(12, letterHeight));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX + 28, lettersY));
+            minimapShader.setVec2("scale", glm::vec2(12, letterHeight));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY + letterHeight - 12));
+            minimapShader.setVec2("scale", glm::vec2(40, 12));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY + 40));
+            minimapShader.setVec2("scale", glm::vec2(40, 12));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            
+            // U
+            lettersStartX += letterSpacing;
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY));
+            minimapShader.setVec2("scale", glm::vec2(12, letterHeight));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX + 28, lettersY));
+            minimapShader.setVec2("scale", glm::vec2(12, letterHeight));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY));
+            minimapShader.setVec2("scale", glm::vec2(40, 12));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            
+            // S
+            lettersStartX += letterSpacing;
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY + letterHeight - 12));
+            minimapShader.setVec2("scale", glm::vec2(40, 12));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY + 40));
+            minimapShader.setVec2("scale", glm::vec2(40, 12));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY));
+            minimapShader.setVec2("scale", glm::vec2(40, 12));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY + 40));
+            minimapShader.setVec2("scale", glm::vec2(12, 30));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX + 28, lettersY + letterHeight - 42));
+            minimapShader.setVec2("scale", glm::vec2(12, 30));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            
+            // A
+            lettersStartX += letterSpacing;
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY));
+            minimapShader.setVec2("scale", glm::vec2(12, letterHeight));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX + 28, lettersY));
+            minimapShader.setVec2("scale", glm::vec2(12, letterHeight));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY + letterHeight - 12));
+            minimapShader.setVec2("scale", glm::vec2(40, 12));
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            minimapShader.setVec2("offset", glm::vec2(lettersStartX, lettersY + 40));
+            minimapShader.setVec2("scale", glm::vec2(40, 12));
             glDrawArrays(GL_TRIANGLES, 0, 6);
 
             glDisable(GL_BLEND);

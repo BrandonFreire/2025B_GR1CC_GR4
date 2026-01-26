@@ -1979,8 +1979,8 @@ int main() {
             glDisable(GL_BLEND);
         }
 
-        // ================= DIBUJAR MINIMAPA (solo si linterna encendida) =================
-        if (linternaEncendida) {
+        // ================= DIBUJAR MINIMAPA (solo si linterna está APAGADA) =================
+        if (!linternaEncendida) {
             glDisable(GL_DEPTH_TEST);
 
             Point playerCell = WorldToCell(camera.Position);

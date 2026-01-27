@@ -1241,7 +1241,7 @@ static void SetupXenoStatic() {
         spaceshipPos = xenoStaticPos;
         spaceshipPos.x -= 12.0f; // 6 unidades a la izquierda del Xeno
         spaceshipPos.z -= 4.0f; // Un poco más atrás
-        spaceshipPos.y = 0.85f;  // En el suelo
+        spaceshipPos.y = 0.95f;  // En el suelo
 
         // ---------------------------------------------------------
         // POSICIONAR LOS HUEVOS EN CÍRCULO ALREDEDOR DEL XENO
@@ -2101,7 +2101,7 @@ int main() {
         modelShip = glm::rotate(modelShip, glm::radians(30.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 
         // 2. ESCALA
-        float escalaNave = 0.0065f;
+        float escalaNave = 0.0075f;
         modelShip = glm::scale(modelShip, glm::vec3(escalaNave));
 
         xenomorphShader.setMat4("model", modelShip);

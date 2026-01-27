@@ -140,6 +140,8 @@
     <None Include="model\xenomorph\xenomorph.gltf" />
     <None Include="model\xeno_raven\xeno_raven.bin" />
     <None Include="model\xeno_raven\xeno_raven.gltf" />
+    <None Include="model\xeno_statue\xeno_statue.bin" />
+    <None Include="model\xeno_statue\xeno_statue.gltf" />
     <None Include="shaders\B2T3.fs" />
     <None Include="shaders\B2T3.vs" />
     <None Include="shaders\light_cube.fs" />
@@ -200,6 +202,17 @@
     <Image Include="model\xeno_raven\default_baseColor.png" />
     <Image Include="model\xeno_raven\default_metallicRoughness.png" />
     <Image Include="model\xeno_raven\default_normal.png" />
+    <Image Include="model\xeno_statue\corpo_baseColor.png" />
+    <Image Include="model\xeno_statue\corpo_emissive.png" />
+    <Image Include="model\xeno_statue\corpo_metallicRoughness.png" />
+    <Image Include="model\xeno_statue\corpo_normal.png" />
+    <Image Include="model\xeno_statue\lambert2_baseColor.png" />
+    <Image Include="model\xeno_statue\lambert2_emissive.jpg" />
+    <Image Include="model\xeno_statue\lambert2_metallicRoughness.png" />
+    <Image Include="model\xeno_statue\lambert2_normal.png" />
+    <Image Include="model\xeno_statue\pavimento_baseColor.png" />
+    <Image Include="model\xeno_statue\pavimento_metallicRoughness.png" />
+    <Image Include="model\xeno_statue\pavimento_normal.png" />
     <Image Include="textures\Finalpa1.png" />
     <Image Include="textures\Finalpa2.png" />
     <Image Include="textures\Finalpainsano1.png" />

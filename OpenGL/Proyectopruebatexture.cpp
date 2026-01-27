@@ -70,6 +70,7 @@ glm::vec3 xenoStaticPos(0.0f); // Posición del modelo
 bool xenoStaticActive = false; // Si se colocó correctamente
 std::vector<glm::vec3> eggPositions;
 glm::vec3 spaceshipPos(0.0f); // Posición de la nave espacial
+glm::vec3 statuePos(0.0f); // Posición de la estatua
 
 // ================= CUBOS COLECCIONABLES =================
 struct Collectible {
@@ -448,7 +449,7 @@ static inline bool CollidesAt(float x, float z) {
         return true;
     }
     
-    // ===== COLISIÓN CON EL XENO RAVEN ESTÁTICO (ZONA COMPLETA) =====
+    // ===== COLISIÓN CON EL XENO RAVEN =====
     if (xenoStaticActive) {
         // Radio grande que cubre toda la zona del círculo de huevos + el xeno en el centro
         const float XENO_STATIC_ZONE_RADIUS = 2.8f; // Más grande que el radio de los huevos (2.0f)
@@ -465,6 +466,20 @@ static inline bool CollidesAt(float x, float z) {
         if (distToEgg < (rad + EGG_COLLISION_RADIUS)) {
             return true;
         }
+    }
+
+    // ===== COLISIÓN CON LA NAVE ESPACIAL =====
+    const float SPACESHIP_COLLISION_RADIUS = 2.5f; // Radio de la nave
+    float distToSpaceship = glm::distance(glm::vec2(x, z), glm::vec2(spaceshipPos.x, spaceshipPos.z));
+    if (distToSpaceship < (rad + SPACESHIP_COLLISION_RADIUS)) {
+        return true;
+    }
+
+    // ===== COLISIÓN CON LA ESTATUA XENO =====
+    const float STATUE_COLLISION_RADIUS = 0.8f; // Radio de la estatua 
+    float distToStatue = glm::distance(glm::vec2(x, z), glm::vec2(statuePos.x, statuePos.z));
+    if (distToStatue < (rad + STATUE_COLLISION_RADIUS)) {
+        return true;
     }
     
     return false;
@@ -1243,6 +1258,12 @@ static void SetupXenoStatic() {
         spaceshipPos.z -= 4.0f; // Un poco más atrás
         spaceshipPos.y = 0.95f;  // En el suelo
 
+        // 3. ESTATUA XENO
+        statuePos = xenoStaticPos;
+        statuePos.x += 6.5f;    // 15 unidades a la DERECHA del Xeno
+        statuePos.z += 0.5f;     // Un poco atrás para formar un arco
+        statuePos.y = 0.0f;      // Al suelo (ajusta si flota o se entierra)
+
         // ---------------------------------------------------------
         // POSICIONAR LOS HUEVOS EN CÍRCULO ALREDEDOR DEL XENO
         // ---------------------------------------------------------
@@ -1276,7 +1297,7 @@ static void SetupXenoStatic() {
             }
         }
 
-        std::cout << "Xeno Raven centrado, nave colocada y xeno rodeado por " << eggPositions.size() << " huevos.\n";
+        std::cout << "Xeno Raven centrado, nave colocada, estatua lista y xeno rodeado por " << eggPositions.size() << " huevos.\n";
     }
 }
 
@@ -1643,6 +1664,9 @@ int main() {
 
     // CARGAR MODELO DE LA NAVE
     Model spaceshipModel("model/spaceship/spaceship.gltf");
+
+    // CARGAR LA ESTATUA
+    Model statueModel("model/xeno_statue/xeno_statue.gltf");
 
     // CONFIGURAR SU POSICIÓN
     SetupXenoStatic();
@@ -2106,6 +2130,20 @@ int main() {
 
         xenomorphShader.setMat4("model", modelShip);
         spaceshipModel.Draw(xenomorphShader);
+
+        // ================= DIBUJAR ESTATUA 2 =================
+        glm::mat4 modelStatue = glm::mat4(1.0f);
+        modelStatue = glm::translate(modelStatue, statuePos);
+
+        // Rotación en Y 
+        modelStatue = glm::rotate(modelStatue, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // ESCALA
+        float escalaEstatua = 0.12f;
+        modelStatue = glm::scale(modelStatue, glm::vec3(escalaEstatua));
+
+        xenomorphShader.setMat4("model", modelStatue);
+        statueModel.Draw(xenomorphShader);
 
         // ===== CUBO LUZ =====
         // The light cube visualization was removed per request so it is not rendered in the sky.

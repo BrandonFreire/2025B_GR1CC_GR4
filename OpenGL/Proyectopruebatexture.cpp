@@ -469,8 +469,11 @@ static inline bool CollidesAt(float x, float z) {
     }
 
     // ===== COLISIÓN CON LA NAVE ESPACIAL =====
-    const float SPACESHIP_COLLISION_RADIUS = 2.5f; // Radio de la nave
-    float distToSpaceship = glm::distance(glm::vec2(x, z), glm::vec2(spaceshipPos.x, spaceshipPos.z));
+    const float SPACESHIP_COLLISION_RADIUS = 3.9f; // Radio más grande para cubrir toda la nave
+    glm::vec3 spaceshipCollisionCenter = spaceshipPos;
+    spaceshipCollisionCenter.x += 1.0f;  // Ajustar hacia donde está el centro visual
+    spaceshipCollisionCenter.z += 4.0f;  // Ajustar en Z según la rotación
+    float distToSpaceship = glm::distance(glm::vec2(x, z), glm::vec2(spaceshipCollisionCenter.x, spaceshipCollisionCenter.z));
     if (distToSpaceship < (rad + SPACESHIP_COLLISION_RADIUS)) {
         return true;
     }

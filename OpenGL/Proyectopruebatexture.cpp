@@ -1472,6 +1472,16 @@ int main() {
     gameOverTex = loadTexture("textures/gameover.png");
     gameWinTex = loadTexture("textures/win.png");
 
+    // ===== CREAR TEXTURA NEGRA PARA EFECTO DE PARPADEO =====
+    unsigned int blackTex;
+    glGenTextures(1, &blackTex);
+    glBindTexture(GL_TEXTURE_2D, blackTex);
+    unsigned char blackPixel[4] = { 0, 0, 0, 255 };
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, blackPixel);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     screenShader.use();
     screenShader.setInt("screenTex", 0);
@@ -2657,6 +2667,52 @@ int main() {
 
             glDisable(GL_BLEND);
             glEnable(GL_DEPTH_TEST);
+        }
+
+        // ===== EFECTO DE PARPADEO DURANTE LEVANTARSE =====
+        if (isWakingUp) {
+            float t = wakeUpTimer;
+            
+            // Definir 3 parpadeos en momentos específicos del despertar
+            // Cada parpadeo dura 0.5 segundos (más lento) y ocurre en intervalos específicos
+            float blinkTimes[3] = { 0.5f, 1.5f, 2.5f }; // Momentos en que ocurren los parpadeos
+            float blinkDuration = 1.2f; // Duración de cada parpadeo (cerrar y abrir) - MÁS LENTO
+            
+            float blinkAlpha = 0.0f;
+            
+            // Revisar si estamos en alguno de los 3 parpadeos
+            for (int i = 0; i < 3; i++) {
+                float blinkStart = blinkTimes[i];
+                float blinkEnd = blinkStart + blinkDuration;
+                
+                if (t >= blinkStart && t < blinkEnd) {
+                    // Calcular progreso dentro del parpadeo (0.0 a 1.0)
+                    float blinkProgress = (t - blinkStart) / blinkDuration;
+                    
+                    // Usar función seno para simular cierre y apertura suave
+                    // 0.0 -> 1.0 -> 0.0 (cierra y abre)
+                    blinkAlpha = sin(blinkProgress * 3.14159f);
+                    break;
+                }
+            }
+            
+            // Si hay parpadeo activo, dibujar overlay negro
+            if (blinkAlpha > 0.01f) {
+                glDisable(GL_DEPTH_TEST);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                
+                screenShader.use();
+                screenShader.setFloat("alpha", blinkAlpha);
+                glBindVertexArray(screenVAO);
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, blackTex);
+                
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                
+                glDisable(GL_BLEND);
+                glEnable(GL_DEPTH_TEST);
+            }
         }
 
         glfwSwapBuffers(window);

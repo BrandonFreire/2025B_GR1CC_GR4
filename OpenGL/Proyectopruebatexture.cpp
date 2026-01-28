@@ -1,8 +1,5 @@
-// ===================== Juego Laberinto =====================
-// Lee un archivo maze.txt (0 = vacío, 1 = suelo, E = salida)
-// Requiere B2T3.fs con uniform vec3 baseColor (sin samplear texture1).
+// ===================== fis after hours=====================
 
-// ===================== Forzar uso de GPU=====================
 #ifdef _WIN32
 extern "C" {
     __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
@@ -49,7 +46,7 @@ struct Enemy {
 
     // Variables para animación
     float animTime = 0.0f;     // Tiempo actual de la animación
-    float rotation = 0.0f;     // Rotación hacia donde mira el enemigo  <-- ESTE CAMPO
+    float rotation = 0.0f;     // Rotación hacia donde mira el enemigo  
     glm::vec3 lastPos;         // Posición anterior
     bool isMoving = false;     // Si está en movimiento
 
@@ -393,7 +390,7 @@ static inline bool WalkableCell(int r, int c) {
 // ==== COLISIONES (PLAYER CIRCLE vs WALL TILES) ====
 // sube/baja (con TILE=0.50, 0.12–0.18)
 const float PLAYER_RADIUS = 0.22f;
-// margen para NO pegarse 
+// margen para nO pegarse 
 const float PLAYER_SKIN = 0.03f;
 
 static inline void TileAABB(int r, int c, float& xMin, float& xMax, float& zMin, float& zMax) {
@@ -513,9 +510,9 @@ static inline void MoveWithCollision(const glm::vec3& deltaXZ) {
 
 
 
-// Busca automáticamente un spawn: primera '1' encontrada (o si quieres, busca una marca 'S')
+// Busca automáticamente un spawn: primera '1' encontrada 
 static bool FindSpawn(int& outR, int& outC) {
-    // 1) si existe S o s, usarla
+
     for (int r = 0; r < MAP_H; r++) {
         for (int c = 0; c < MAP_W; c++) {
             if (MAP[r][c] == 'S' || MAP[r][c] == 's') {
@@ -525,7 +522,6 @@ static bool FindSpawn(int& outR, int& outC) {
         }
     }
 
-    // 2) fallback: primera celda de suelo
     for (int r = 0; r < MAP_H; r++) {
         for (int c = 0; c < MAP_W; c++) {
             if (IsFloor(r, c)) { outR = r; outC = c; return true; }
@@ -548,7 +544,7 @@ static Point WorldToCell(glm::vec3 pos) {
 // SISTEMA PERSECUCIÓN DEL ALIEN
 // =====================================================================
 // Características:
-// 1. BFS con caché inteligente (solo recalcula cuando es necesario)
+// 1. BFS con caché inteligente 
 // 2. Persecución directa cuando está cerca
 // =====================================================================
 
@@ -561,7 +557,7 @@ const float PATH_RECALC_INTERVAL = 0.5f;   // Recalcular cada 0.5s máximo
 const int DIRECT_CHASE_DISTANCE = 5;       // Persecución directa si está cerca
 const int PLAYER_MOVE_THRESHOLD = 3;       // Recalcular si jugador se movió N celdas
 
-// ===== BUFFERS ESTÁTICOS REUTILIZABLES (SIN ALLOCACIONES EN RUNTIME) =====
+// ===== BUFFERS ESTÁTICOS REUTILIZABLES =====
 static std::vector<std::vector<int>> bfsDistance;      // Distancia desde el inicio
 static std::vector<std::vector<bool>> bfsVisited;      // Nodos visitados
 static std::vector<Point> bfsQueue;                     // Cola BFS pre-allocada
@@ -572,7 +568,7 @@ static bool pathfindBuffersInit = false;
 static const int DIR_R[] = { -1, 1, 0, 0 };
 static const int DIR_C[] = { 0, 0, -1, 1 };
 
-// ===== INICIALIZACIÓN DE BUFFERS (una sola vez) =====
+// ===== INICIALIZACIÓN DE BUFFERS =====
 static void InitPathfindBuffers() {
     if (pathfindBuffersInit && (int)bfsDistance.size() == MAP_H) return;
 
@@ -606,7 +602,7 @@ static void ResetBFSBuffers(int centerR, int centerC, int radius) {
 // Información pre-calculada de cada pared
 struct WallInfo {
     int textureIndex;      // Índice de textura (0-5 para hall, 6 para room, 7-8 para indie)
-    bool flipTexY;         // Si debe voltear la textura
+    bool flipTexY;         
 };
 
 // Pre-cálculo de texturas por celda y dirección (N, S, W, E)
@@ -970,7 +966,7 @@ std::vector<std::vector<float>> verticesByTexture(12);
         << (MAP_H * MAP_W * 6) << " draw calls antes)\n";
 }
 
-// Función para inicializar cache de uniform locations
+// Función para inicializar cache de uniform location
 static void InitUniformLocations(unsigned int xenomorphShaderID) {
     if (uniformLocsInit) return;
 
@@ -1049,7 +1045,7 @@ static Point GetNextStepBFS(int startR, int startC, int targetR, int targetC) {
                     }
                 }
 
-                // ===== Vaerificar colision con la nave
+                // ===== Verificar colision con la nave
                 if (!cellBlocked) {
                     const float SPACESHIP_COLLISION_RADIUS = 5.45f;
                     glm::vec3 spaceshipCollisionCenter = spaceshipPos;
@@ -1186,7 +1182,7 @@ static void CheckCollectibles(const glm::vec3& playerPos, GLFWwindow* window) {
             }
             else {
                 title = "LABERINTO - HAS RECOGIDO TODOS LOS CUBOS!!!";
-                gameWin = true;   // <<<<<< AQUÍ SE GANA
+                gameWin = true;   // En este punto se gana la partida 
             }
             if (window) glfwSetWindowTitle(window, title.c_str());
         }
@@ -1194,7 +1190,7 @@ static void CheckCollectibles(const glm::vec3& playerPos, GLFWwindow* window) {
 }
 
 // ================= TEXTURAS =================
-// simple texture loader (usable for start screen and map textures)
+// simple texture loader 
 static unsigned int loadTexture(const char* path, bool flip = true) {
     unsigned int id;
     glGenTextures(1, &id);
@@ -1203,7 +1199,7 @@ static unsigned int loadTexture(const char* path, bool flip = true) {
     stbi_set_flip_vertically_on_load(flip);
     unsigned char* data = stbi_load(path, &w, &h, &c, 0);
     if (!data) {
-        // Retry without ../
+        
         std::string sPath = path;
         if (sPath.size() > 3 && sPath.substr(0, 3) == "../") {
             std::string fallback = sPath.substr(3);
@@ -1376,8 +1372,7 @@ static void SetupPauseMenu() {
 // ================= MAIN =================
 
 int main() {
-    // 1) Cargar mapa ANTES de crear OpenGL (así si falla, no pierdes tiempo)
-    // Ruta recomendada: el archivo junto al .exe (o junto al proyecto ejecutando desde VS)
+    // 1) Cargar mapa ANTES de crear OpenGL
     if (!LoadMapFromTxt("maze.txt")) {
         std::cerr << "ERROR: No se pudo cargar maze.txt\n";
         return -1;
@@ -1491,12 +1486,9 @@ int main() {
 
     // ===== TEXTURAS =====
     unsigned int floorRoomTex = loadTexture("textures/TextruaP3.png");
-    // restore: room walls use Pared4, hall walls use multiple pasillo textures
-    // load wallRoomTex without vertical flip so it displays upright
     unsigned int wallRoomTex = loadTexture("textures/Pared4.png", false);
     unsigned int floorHallTex = loadTexture("textures/gradas1.png");
 
-    // load a sequence of pasillo textures (pattern: pasillo1..pasillo6)
     unsigned int wallHallTex[6];
     wallHallTex[0] = loadTexture("textures/polipa.png");
     wallHallTex[1] = loadTexture("textures/polipa2.png");
@@ -1510,23 +1502,20 @@ int main() {
     unsigned int floorHallTexB = loadTexture("textures/pasilloprueba1.png");
 
     // detecta algunos segmentos de pared estrechos y márcalos para usar la textura indie
-    // IndieSeg ya está definido globalmente
     // Usar vector global para que PrecomputeWallTextures pueda acceder
     g_indieSegs.clear();
     const int MAX_INDIE = 4;
-    const int NARROW_THRESHOLD = 2; // longitud de segmento <= umbral considerado "estrecho"
+    const int NARROW_THRESHOLD = 2; // longitud de segmento
 
     for (int rr = 0; rr < MAP_H && (int)g_indieSegs.size() < MAX_INDIE; rr++) {
         for (int cc = 0; cc < MAP_W && (int)g_indieSegs.size() < MAX_INDIE; cc++) {
             if (!IsFloor(rr, cc)) continue;
-            // pared horizontal sobre esta celda de suelo (facing north)
             if (!InBounds(rr - 1, cc) || IsWall(rr - 1, cc)) {
                 int startC = cc;
                 while (startC - 1 >= 0 && IsFloor(rr, startC - 1) && (!InBounds(rr - 1, startC - 1) || IsWall(rr - 1, startC - 1))) startC--;
                 int len = 0;
                 int c2 = startC;
                 while (c2 < MAP_W && IsFloor(rr, c2) && (!InBounds(rr - 1, c2) || IsWall(rr - 1, c2))) { len++; c2++; }
-                // only mark segments that are exactly NARROW_THRESHOLD long (pairs)
                 if (len == NARROW_THRESHOLD) g_indieSegs.push_back({ rr, startC,0, len });
             }
             if ((int)g_indieSegs.size() >= MAX_INDIE) break;
@@ -1538,7 +1527,6 @@ int main() {
                 int len = 0;
                 int r2 = startR;
                 while (r2 < MAP_H && IsFloor(r2, cc) && (!InBounds(r2, cc - 1) || IsWall(r2, cc - 1))) { len++; r2++; }
-                // only mark segments that are exactly NARROW_THRESHOLD long (pairs)
                 if (len == NARROW_THRESHOLD) g_indieSegs.push_back({ startR, cc,1, len });
             }
         }
@@ -1591,7 +1579,6 @@ int main() {
 
     // Cubo para la luz
     float cubeVertices[] = {
-        // (igual que el tuyo)
         -0.5f,-0.5f,-0.5f,   0,0,-1, 0,0,
          0.5f, 0.5f,-0.5f,   0,0,-1, 1,1,
          0.5f,-0.5f,-0.5f,   0,0,-1, 1,0,
@@ -1729,7 +1716,6 @@ int main() {
 
     // ================= LOOP =================
     while (!glfwWindowShouldClose(window)) {
-        // Poll events first so key state is updated for start screen
         glfwPollEvents();
 
         // ===== PANTALLA DE INICIO (PORTADA) =====
@@ -1783,7 +1769,7 @@ int main() {
             glEnable(GL_DEPTH_TEST);
 
             glfwSwapBuffers(window);
-            continue;   // CRÍTICO
+            continue;   
         }
         // ===== GAME WIN =====
         if (gameWin) {
@@ -1872,9 +1858,8 @@ int main() {
         shader.setVec3("lightPos", glm::vec3(0.0f, -1000.0f, 0.0f)); // Luz global desactivada
         shader.setVec3("viewPos", camera.Position);
 
-        // compute wide stripe width for hall textures (much thicker stripes)
-        int hallStripeWidth = std::max(1, MAP_W / 6); // base slice
-        const int HALL_STRIPE_THICKNESS = 3; // make stripes3x wider
+        int hallStripeWidth = std::max(1, MAP_W / 6); 
+        const int HALL_STRIPE_THICKNESS = 3; 
         hallStripeWidth = std::min(MAP_W, hallStripeWidth * HALL_STRIPE_THICKNESS);
 
         // Linterna simple sin parpadeo
@@ -2185,23 +2170,7 @@ int main() {
         xenomorphShader.setMat4("model", modelStatue);
         statueModel.Draw(xenomorphShader);
 
-        // ===== CUBO LUZ =====
-        // The light cube visualization was removed per request so it is not rendered in the sky.
-        // If you want to re-enable for debugging, uncomment the block below.
-        /*
-        lightShader.use();
-        lightShader.setMat4("projection", projection);
-        lightShader.setMat4("view", view);
-
-        glm::mat4 mLight = glm::mat4(1.0f);
-        mLight = glm::translate(mLight, lightPos);
-        mLight = glm::scale(mLight, glm::vec3(LIGHT_CUBE_SCALE));
-        lightShader.setMat4("model", mLight);
-
-        glBindVertexArray(cubeVAO);
-        glDrawArrays(GL_TRIANGLES,0,36);
-        */
-
+     
 		// ======================================================================
         // ================= RECOLECCIÓN DE CUBOS COLECCIONABLES ================
         CheckCollectibles(camera.Position, window);
@@ -2582,7 +2551,7 @@ int main() {
             minimapShader.setVec2("scale", glm::vec2(titleWidth, titleHeight));
             glDrawArrays(GL_TRIANGLES, 0, 6);
             
-            // Letras "P A U S A" simuladas con rectángulos
+            // Letras "P A U S A" 
             float letterSpacing = 80.0f;
             float letterWidth = 60.0f;
             float letterHeight = 80.0f;
@@ -2676,7 +2645,7 @@ int main() {
             // Definir 3 parpadeos en momentos específicos del despertar
             // Cada parpadeo dura 0.5 segundos (más lento) y ocurre en intervalos específicos
             float blinkTimes[3] = { 0.5f, 1.5f, 2.5f }; // Momentos en que ocurren los parpadeos
-            float blinkDuration = 1.2f; // Duración de cada parpadeo (cerrar y abrir) - MÁS LENTO
+            float blinkDuration = 1.2f; // Duración de cada parpadeo 
             
             float blinkAlpha = 0.0f;
             
@@ -2716,7 +2685,7 @@ int main() {
         }
 
         glfwSwapBuffers(window);
-        // glfwPollEvents() ya se llama al inicio del loop, no duplicar aquí
+        // glfwPollEvents() ya se llama al inicio del loop.
     }
 
     glfwTerminate();
